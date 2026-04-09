@@ -192,14 +192,14 @@ async def run_login_check(
             except Exception:
                 pass
             # Extra buffer for slow JS rendering
-            await bpage.wait_for_timeout(3000)
+            await bpage.wait_for_timeout(5000)
 
             # Verify success indicator
             if indicator:
                 found = await _check_indicator(bpage, indicator)
                 if not found:
                     # Some sites redirect after login — wait a bit more and retry
-                    await bpage.wait_for_timeout(3000)
+                    await bpage.wait_for_timeout(5000)
                     found = await _check_indicator(bpage, indicator)
 
                 if not found:
@@ -326,7 +326,7 @@ async def run_multi_page_check(
                     await bpage.wait_for_load_state("networkidle", timeout=15000)
                 except Exception:
                     pass
-                await bpage.wait_for_timeout(3000)
+                await bpage.wait_for_timeout(5000)
 
             # Check each page
             overall_status = "ok"
