@@ -170,7 +170,7 @@ See `backend/.env.example` for the full list of configuration options.
 
 ## Design
 
-UI follows the [Frontline Data Solutions](https://www.fldata.com) color scheme:
+UI follows the color scheme:
 - Primary Blue: `#007aff`
 - Navy: `#001e3f`
 - Orange Accent: `#fc5c1d`
