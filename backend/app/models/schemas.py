@@ -10,6 +10,13 @@ class UserCreate(BaseModel):
     full_name: str | None = None
 
 
+class ProfileUpdate(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     email: str

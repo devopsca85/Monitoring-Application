@@ -12,7 +12,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.models import User
-from app.models.schemas import Token, UserCreate, UserResponse
+from app.models.schemas import ProfileUpdate, Token, UserCreate, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
@@ -97,21 +97,22 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.put("/me", response_model=UserResponse)
 def update_me(
-    data: dict,
+    data: ProfileUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if "full_name" in data:
-        current_user.full_name = data["full_name"]
-    if "email" in data and data["email"]:
-        existing = db.query(User).filter(User.email == data["email"], User.id != current_user.id).first()
+    """Update own profile. Cannot change is_admin or is_active via this endpoint."""
+    if data.full_name is not None:
+        current_user.full_name = data.full_name
+    if data.email is not None and data.email:
+        existing = db.query(User).filter(User.email == data.email, User.id != current_user.id).first()
         if existing:
             raise HTTPException(status_code=400, detail="Email already in use")
-        current_user.email = data["email"]
-    if data.get("current_password") and data.get("new_password"):
-        if not verify_password(data["current_password"], current_user.hashed_password):
+        current_user.email = data.email
+    if data.current_password and data.new_password:
+        if not verify_password(data.current_password, current_user.hashed_password):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
-        current_user.hashed_password = hash_password(data["new_password"])
+        current_user.hashed_password = hash_password(data.new_password)
     db.commit()
     db.refresh(current_user)
     return current_user
