@@ -88,25 +88,28 @@ export default function Dashboard() {
   const [sitesStatus, setSitesStatus] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [refreshIn, setRefreshIn] = useState(15);
-  const refreshRef = useRef(null);
+  const nextRefreshAt = useRef(Date.now() + 15000);
 
   const loadData = () => {
-    getDashboardStats().then((r) => setStats(r.data)).catch(() => {});
-    getSitesStatus().then((r) => setSitesStatus(r.data)).catch(() => {});
-    getAlerts().then((r) => setAlerts(r.data)).catch(() => {});
+    Promise.all([
+      getDashboardStats().then((r) => setStats(r.data)).catch(() => {}),
+      getSitesStatus().then((r) => setSitesStatus(r.data)).catch(() => {}),
+      getAlerts().then((r) => setAlerts(r.data)).catch(() => {}),
+    ]);
+    nextRefreshAt.current = Date.now() + 15000;
     setRefreshIn(15);
   };
 
-  // Initial load + auto-refresh every 15 seconds
+  // Single 1-second tick that handles both countdown and data refresh
   useEffect(() => {
     loadData();
-    refreshRef.current = setInterval(loadData, 15000);
-    return () => clearInterval(refreshRef.current);
-  }, []);
-
-  // Countdown ticker for the refresh indicator
-  useEffect(() => {
-    const id = setInterval(() => setRefreshIn((p) => Math.max(0, p - 1)), 1000);
+    const id = setInterval(() => {
+      const remaining = Math.max(0, Math.round((nextRefreshAt.current - Date.now()) / 1000));
+      setRefreshIn(remaining);
+      if (remaining <= 0) {
+        loadData();
+      }
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 

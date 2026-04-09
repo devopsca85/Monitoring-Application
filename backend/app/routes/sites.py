@@ -30,7 +30,7 @@ def get_site(
 
 
 @router.post("/", response_model=SiteResponse, status_code=201)
-def create_site(
+async def create_site(
     site_in: SiteCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -73,6 +73,19 @@ def create_site(
 
     db.commit()
     db.refresh(site)
+
+    # Notify admins about new site
+    from app.services.notification_service import send_admin_notification
+    await send_admin_notification(
+        subject=f"[NEW SITE] {site.name} added to monitoring",
+        message=(
+            f"<strong>{site.name}</strong> ({site.url}) has been added "
+            f"to monitoring by <strong>{user.email}</strong>.<br/>"
+            f"Check type: <strong>{site.check_type.value}</strong> | "
+            f"Interval: <strong>{site.check_interval_minutes} min</strong>"
+        ),
+    )
+
     return site
 
 
@@ -148,7 +161,7 @@ def update_site(
 
 
 @router.delete("/{site_id}", status_code=204)
-def delete_site(
+async def delete_site(
     site_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -156,5 +169,20 @@ def delete_site(
     site = db.query(Site).filter(Site.id == site_id).first()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
+
+    site_name = site.name
+    site_url = site.url
+    deleted_by = user.email
+
     db.delete(site)
     db.commit()
+
+    # Notify admins about site removal
+    from app.services.notification_service import send_admin_notification
+    await send_admin_notification(
+        subject=f"[REMOVED] Site Deleted: {site_name}",
+        message=(
+            f"<strong>{site_name}</strong> ({site_url}) has been removed "
+            f"from monitoring by <strong>{deleted_by}</strong>."
+        ),
+    )
