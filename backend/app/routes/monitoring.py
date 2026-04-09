@@ -24,12 +24,24 @@ async def submit_result(
     db: Session = Depends(get_db),
 ):
     """Called by the monitoring engine to submit check results."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     result = MonitoringResult(**result_in.model_dump())
     db.add(result)
     db.commit()
     db.refresh(result)
 
-    await evaluate_and_alert(db, result)
+    logger.info(
+        f"Result submitted: site_id={result.site_id}, status={result.status.value}, "
+        f"code={result.status_code}, error={result.error_message or 'none'}"
+    )
+
+    try:
+        await evaluate_and_alert(db, result)
+    except Exception as e:
+        logger.error(f"evaluate_and_alert failed: {e}")
+
     return result
 
 
