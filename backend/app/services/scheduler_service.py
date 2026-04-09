@@ -38,7 +38,7 @@ def _build_job(site: Site, db) -> dict:
                 "password": decrypt_credential(cred.encrypted_password),
             }
 
-    if site.check_type.value == "multi_page":
+    if site.check_type.value in ("login", "multi_page"):
         pages = (
             db.query(SitePage)
             .filter(SitePage.site_id == site.id)

@@ -76,7 +76,7 @@ export default function SiteForm() {
       if (form.check_type === 'login' || form.check_type === 'multi_page') {
         payload.credentials = credentials;
       }
-      if (form.check_type === 'multi_page') {
+      if (form.check_type === 'login' || form.check_type === 'multi_page') {
         payload.pages = pages;
       }
 
@@ -221,10 +221,10 @@ export default function SiteForm() {
           </div>
         )}
 
-        {form.check_type === 'multi_page' && (
+        {(form.check_type === 'login' || form.check_type === 'multi_page') && (
           <div className="card">
             <div className="card-header">
-              <h3>Pages to Monitor</h3>
+              <h3>Subpages to Validate After Login</h3>
               <button type="button" onClick={addPage} className="btn btn-outline">+ Add Page</button>
             </div>
             {pages.map((page, idx) => (
@@ -255,7 +255,7 @@ export default function SiteForm() {
                 </div>
               </div>
             ))}
-            {pages.length === 0 && <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center', padding: '20px' }}>No pages added. Click "+ Add Page" above.</p>}
+            {pages.length === 0 && <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center', padding: '20px' }}>No subpages added. Click "+ Add Page" to validate pages after login.</p>}
           </div>
         )}
 

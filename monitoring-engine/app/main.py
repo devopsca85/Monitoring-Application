@@ -32,7 +32,7 @@ async def run_check(job: MonitorJob):
     if job.check_type == "uptime":
         result = await run_uptime_check(site)
     elif job.check_type == "login":
-        result = await run_login_check(site, job.credentials or {})
+        result = await run_login_check(site, job.credentials or {}, job.pages)
     elif job.check_type == "multi_page":
         result = await run_multi_page_check(site, job.credentials or {}, job.pages)
     else:
