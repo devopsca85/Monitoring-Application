@@ -141,13 +141,15 @@ export default function SiteForm() {
               </select>
             </div>
             <div className="form-group">
-              <label>Check Interval (minutes)</label>
-              <select value={form.check_interval_minutes} onChange={(e) => setForm({ ...form, check_interval_minutes: parseInt(e.target.value) })}>
-                <option value={5}>5 minutes</option>
-                <option value={10}>10 minutes</option>
-                <option value={15}>15 minutes</option>
-                <option value={30}>30 minutes</option>
-                <option value={60}>60 minutes</option>
+              <label>Check Interval</label>
+              <select value={String(form.check_interval_minutes)} onChange={(e) => setForm({ ...form, check_interval_minutes: parseInt(e.target.value) })}>
+                <option value="1">Every 1 minute</option>
+                <option value="3">Every 3 minutes</option>
+                <option value="5">Every 5 minutes</option>
+                <option value="10">Every 10 minutes</option>
+                <option value="15">Every 15 minutes</option>
+                <option value="30">Every 30 minutes</option>
+                <option value="60">Every 60 minutes</option>
               </select>
             </div>
           </div>

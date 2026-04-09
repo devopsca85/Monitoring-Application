@@ -124,7 +124,7 @@ async def _run_scheduler_loop():
         except Exception as e:
             logger.error(f"Scheduler loop error: {e}")
 
-        await asyncio.sleep(30)  # Check every 30 seconds
+        await asyncio.sleep(15)  # Check every 15 seconds to support 1-min intervals
 
 
 async def _safe_trigger(site_id: int, name: str):

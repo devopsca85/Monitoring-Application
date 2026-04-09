@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { getMe } from './services/api';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -9,6 +9,7 @@ import SiteForm from './pages/SiteForm';
 import Alerts from './pages/Alerts';
 import AdminUsers from './pages/AdminUsers';
 import AdminSettings from './pages/AdminSettings';
+import Profile from './pages/Profile';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -39,39 +40,139 @@ function App() {
 
   return (
     <div className="app-layout">
-      <Sidebar user={user} setUser={setUser} />
-      <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/sites" element={<Sites />} />
-          <Route path="/sites/new" element={<SiteForm />} />
-          <Route path="/sites/:id/edit" element={<SiteForm />} />
-          <Route path="/sites/:id" element={<SiteDetail />} />
-          <Route path="/alerts" element={<Alerts />} />
-          {user.is_admin && (
-            <>
-              <Route path="/admin/users" element={<AdminUsers />} />
-              <Route path="/admin/settings" element={<AdminSettings />} />
-            </>
-          )}
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
-      </main>
+      <Sidebar user={user} />
+      <div style={{ flex: 1, marginLeft: 260, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <TopBar user={user} setUser={setUser} />
+        <main className="main-content" style={{ marginLeft: 0 }}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/sites" element={<Sites />} />
+            <Route path="/sites/new" element={<SiteForm />} />
+            <Route path="/sites/:id/edit" element={<SiteForm />} />
+            <Route path="/sites/:id" element={<SiteDetail />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
+            {user.is_admin && (
+              <>
+                <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/settings" element={<AdminSettings />} />
+              </>
+            )}
+            <Route path="*" element={<Navigate to="/" />} />
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }
 
-function Sidebar({ user, setUser }) {
-  const location = useLocation();
-  const isActive = (path) =>
-    location.pathname === path || location.pathname.startsWith(path + '/')
-      ? 'active'
-      : '';
+function TopBar({ user, setUser }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     setUser(null);
   };
+
+  const initials = (user.full_name || user.email)
+    .split(/[\s@]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0].toUpperCase())
+    .join('');
+
+  return (
+    <div style={{
+      height: 56, background: 'var(--color-bg-white)', borderBottom: '1px solid var(--color-border)',
+      display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 32px',
+      position: 'sticky', top: 0, zIndex: 50,
+    }}>
+      <div ref={ref} style={{ position: 'relative' }}>
+        <button
+          onClick={() => setOpen(!open)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px',
+            borderRadius: 'var(--radius)', transition: 'background 0.15s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+        >
+          <div style={{
+            width: 34, height: 34, borderRadius: '50%', background: 'var(--color-primary)',
+            color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '13px', fontWeight: 700,
+          }}>
+            {initials}
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.2 }}>{user.full_name || user.email}</div>
+            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.2 }}>
+              {user.is_admin ? 'Admin' : 'User'}
+            </div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+
+        {open && (
+          <div style={{
+            position: 'absolute', right: 0, top: '100%', marginTop: 4,
+            background: 'var(--color-bg-white)', border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            minWidth: 200, overflow: 'hidden', zIndex: 100,
+          }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>{user.full_name || 'User'}</div>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{user.email}</div>
+            </div>
+            <button
+              onClick={() => { setOpen(false); navigate('/profile'); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: '13px', textAlign: 'left', color: 'var(--color-text)',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              My Profile
+            </button>
+            <button
+              onClick={handleLogout}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: '13px', textAlign: 'left', color: 'var(--color-red)',
+                borderTop: '1px solid var(--color-border)',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+              Logout
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ user }) {
+  const location = useLocation();
+  const isActive = (path) =>
+    location.pathname === path || location.pathname.startsWith(path + '/')
+      ? 'active'
+      : '';
 
   return (
     <aside className="sidebar">
@@ -105,14 +206,6 @@ function Sidebar({ user, setUser }) {
           </>
         )}
       </nav>
-      <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>
-          {user.email}
-        </div>
-        <button onClick={handleLogout} className="btn btn-outline" style={{ width: '100%', color: 'rgba(255,255,255,0.7)', borderColor: 'rgba(255,255,255,0.2)' }}>
-          Logout
-        </button>
-      </div>
     </aside>
   );
 }

@@ -30,6 +30,7 @@ export const login = (username, password) =>
 export const register = (data) => api.post('/auth/register', data);
 
 export const getMe = () => api.get('/auth/me');
+export const updateMe = (data) => api.put('/auth/me', data);
 
 // Sites
 export const getSites = () => api.get('/sites/');
@@ -47,6 +48,7 @@ export const getAlerts = (resolved = false) =>
   api.get(`/monitoring/alerts?resolved=${resolved}`);
 export const resolveAlert = (id) => api.post(`/monitoring/alerts/${id}/resolve`);
 export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`);
+export const getSitesStatus = () => api.get('/monitoring/sites-status');
 
 // Admin — Users
 export const getUsers = () => api.get('/admin/users');

@@ -85,6 +85,52 @@ def resolve_alert(
     return alert
 
 
+@router.get("/sites-status")
+def sites_status(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return all sites with their latest check result and next-check countdown."""
+    sites = db.query(Site).all()
+
+    latest_subq = (
+        db.query(
+            MonitoringResult.site_id,
+            func.max(MonitoringResult.checked_at).label("max_checked"),
+        )
+        .group_by(MonitoringResult.site_id)
+        .subquery()
+    )
+    latest_results = (
+        db.query(MonitoringResult)
+        .join(
+            latest_subq,
+            (MonitoringResult.site_id == latest_subq.c.site_id)
+            & (MonitoringResult.checked_at == latest_subq.c.max_checked),
+        )
+        .all()
+    )
+    result_map = {r.site_id: r for r in latest_results}
+
+    out = []
+    for s in sites:
+        r = result_map.get(s.id)
+        out.append({
+            "id": s.id,
+            "name": s.name,
+            "url": s.url,
+            "check_type": s.check_type.value,
+            "check_interval_minutes": s.check_interval_minutes,
+            "is_active": s.is_active,
+            "last_status": r.status.value if r else None,
+            "last_checked_at": r.checked_at.isoformat() if r and r.checked_at else None,
+            "last_response_time_ms": r.response_time_ms if r else None,
+            "last_status_code": r.status_code if r else None,
+            "last_error": r.error_message if r else None,
+        })
+    return out
+
+
 @router.get("/dashboard", response_model=DashboardStats)
 def dashboard_stats(
     db: Session = Depends(get_db),

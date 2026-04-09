@@ -84,32 +84,17 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
         db.commit()
         return
 
-    # IMMEDIATE ALERT: 404 or 5XX errors — don't wait for consecutive failures
+    # INSTANT ALERT on any failure — no waiting for consecutive failures
     if _is_immediate_alert(result):
         error_msg = (
             f"HTTP {result.status_code} error on {site.name} ({site.url}). "
             f"{result.error_message or ''}"
         ).strip()
-        logger.warning(f"Immediate alert for {site.name}: HTTP {result.status_code}")
-        await _create_and_send_alert(db, site, result, error_msg)
-        return
-
-    # STANDARD ALERT: wait for consecutive failures
-    recent_results = (
-        db.query(MonitoringResult)
-        .filter(MonitoringResult.site_id == site.id)
-        .order_by(MonitoringResult.checked_at.desc())
-        .limit(CONSECUTIVE_FAILURES_THRESHOLD)
-        .all()
-    )
-
-    consecutive_failures = sum(
-        1 for r in recent_results if r.status != AlertStatus.OK
-    )
-
-    if consecutive_failures >= CONSECUTIVE_FAILURES_THRESHOLD:
-        msg = (
+    else:
+        error_msg = (
             result.error_message
-            or f"Site {site.name} has been down for {CONSECUTIVE_FAILURES_THRESHOLD} consecutive checks."
+            or f"Site {site.name} ({site.url}) is {result.status.value}."
         )
-        await _create_and_send_alert(db, site, result, msg)
+
+    logger.warning(f"Instant alert for {site.name}: {result.status.value} — {error_msg}")
+    await _create_and_send_alert(db, site, result, error_msg)
