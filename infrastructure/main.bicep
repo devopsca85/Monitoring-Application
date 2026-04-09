@@ -123,34 +123,6 @@ resource monitoringEngineApp 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
-// --- Azure Functions (Scheduler) ---
-resource functionStorageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: '${prefix}funcsa'
-  location: location
-  kind: 'StorageV2'
-  sku: {
-    name: 'Standard_LRS'
-  }
-}
-
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
-  name: '${prefix}-scheduler'
-  location: location
-  kind: 'functionapp,linux'
-  properties: {
-    serverFarmId: appServicePlan.id
-    siteConfig: {
-      linuxFxVersion: 'PYTHON|3.11'
-      appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${functionStorageAccount.name};AccountKey=${functionStorageAccount.listKeys().keys[0].value}' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
-        { name: 'BACKEND_API_URL', value: 'https://${backendApp.properties.defaultHostName}/api/v1' }
-        { name: 'MONITORING_ENGINE_URL', value: 'https://${monitoringEngineApp.properties.configuration.ingress.fqdn}' }
-      ]
-    }
-  }
-}
-
 // --- Application Insights ---
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: '${prefix}-insights'

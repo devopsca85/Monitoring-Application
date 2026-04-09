@@ -153,38 +153,6 @@ resource "azurerm_container_app" "monitoring_engine" {
 }
 
 # -----------------------------------------------------------------------------
-# Azure Functions (Scheduler)
-# -----------------------------------------------------------------------------
-resource "azurerm_storage_account" "functions" {
-  name                     = "${var.prefix}funcsa"
-  resource_group_name      = azurerm_resource_group.main.name
-  location                 = azurerm_resource_group.main.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-}
-
-resource "azurerm_linux_function_app" "scheduler" {
-  name                       = "${var.prefix}-scheduler"
-  location                   = azurerm_resource_group.main.location
-  resource_group_name        = azurerm_resource_group.main.name
-  service_plan_id            = azurerm_service_plan.main.id
-  storage_account_name       = azurerm_storage_account.functions.name
-  storage_account_access_key = azurerm_storage_account.functions.primary_access_key
-
-  site_config {
-    application_stack {
-      python_version = "3.11"
-    }
-  }
-
-  app_settings = {
-    FUNCTIONS_WORKER_RUNTIME = "python"
-    BACKEND_API_URL          = "https://${azurerm_linux_web_app.backend.default_hostname}/api/v1"
-    MONITORING_ENGINE_URL    = "https://${azurerm_container_app.monitoring_engine.ingress[0].fqdn}"
-  }
-}
-
-# -----------------------------------------------------------------------------
 # Application Insights
 # -----------------------------------------------------------------------------
 resource "azurerm_application_insights" "main" {

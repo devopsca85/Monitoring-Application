@@ -5,29 +5,28 @@ A fully managed Azure-native website monitoring platform with login validation, 
 ## Architecture
 
 ```
-Azure Function (Timer - every 5 min)
+FastAPI Backend (Built-in Scheduler)
         ↓
-Triggers Monitoring Jobs
+Triggers Monitoring Jobs (per site interval)
         ↓
-Azure Container Apps (Playwright engine)
+Container Apps (Playwright engine)
         ↓
-Results → FastAPI (App Service)
+Results → Backend API
         ↓
 Store → Azure MySQL Flexible Server
         ↓
-Alerts → Email (Azure Communication Services) / Teams Webhook
+Alerts → SMTP Email / Teams Webhook
 ```
 
 ## Azure Services
 
 | Component | Azure Service |
 |---|---|
-| API + Dashboard | App Service (Linux) |
+| API + Dashboard + Scheduler | App Service (Linux) |
 | Monitoring Engine | Container Apps (Playwright) |
 | Database | MySQL Flexible Server |
-| Scheduler | Azure Functions (Timer Trigger) |
 | Secrets | Key Vault |
-| Notifications | Communication Services + Teams |
+| Notifications | SMTP Email + Teams Webhook |
 | Observability | Application Insights |
 
 ## Features
@@ -93,9 +92,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 │   │   ├── checks.py     # Uptime, login, multi-page checks
 │   │   └── main.py       # FastAPI endpoint for running checks
 │   └── Dockerfile
-├── scheduler/            # Azure Functions timer trigger
-│   └── function_app.py
-├── infrastructure/       # Azure Bicep IaC
+├── infrastructure/       # Azure IaC
 │   ├── main.tf            # Terraform resources
 │   ├── variables.tf       # Input variables
 │   ├── outputs.tf         # Output values
@@ -132,14 +129,7 @@ docker push monitoracr.azurecr.io/monitoring-engine:latest
 docker push monitoracr.azurecr.io/frontend:latest
 ```
 
-### 3. Deploy Azure Function (Scheduler)
-
-```bash
-cd scheduler
-func azure functionapp publish monitor-scheduler
-```
-
-### 4. Configure Secrets in Key Vault
+### 3. Configure Secrets in Key Vault
 
 ```bash
 az keyvault secret set --vault-name monitor-kv --name DB-PASSWORD --value "YourPassword"
