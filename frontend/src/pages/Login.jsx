@@ -29,9 +29,9 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h1>
-          <span style={{ color: 'var(--color-orange)' }}>FL</span>Data Monitor
-        </h1>
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <img src="https://www.fldata.com/wp-content/uploads/2020/09/fldata_logo.png" alt="FLData" style={{ maxWidth: '200px', height: 'auto' }} />
+        </div>
         <p>Sign in to your monitoring dashboard</p>
         {error && <div className="error-message">{error}</div>}
         <form onSubmit={handleSubmit}>

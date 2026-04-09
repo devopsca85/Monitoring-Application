@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:www.fldata.com)"
+      "WebFetch(domain:www.fldata.com)",
+      "Bash(curl -s https://www.fldata.com)",
+      "Bash(curl -sL https://www.fldata.com)"
     ]
   }
 }

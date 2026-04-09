@@ -67,9 +67,7 @@ function Sidebar({ user, setUser }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <h1>
-          <span>FL</span>Data Monitor
-        </h1>
+        <img src="https://www.fldata.com/wp-content/uploads/2020/09/fldata_logo.png" alt="FLData" style={{ maxWidth: '160px', height: 'auto', filter: 'brightness(0) invert(1)' }} />
       </div>
       <nav className="sidebar-nav">
         <Link to="/" className={isActive('/')}>
