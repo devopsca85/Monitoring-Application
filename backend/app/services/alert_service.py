@@ -38,6 +38,8 @@ async def _create_and_send_alert(
         site_id=site.id,
         alert_type=result.status,
         message=message,
+        notified=True,
+        notified_at=datetime.now(timezone.utc),
     )
     db.add(alert)
     db.commit()

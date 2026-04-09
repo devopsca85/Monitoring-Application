@@ -61,14 +61,37 @@ def get_results(
     )
 
 
-@router.get("/alerts", response_model=list[AlertResponse])
+@router.get("/alerts", response_model=list[AlertDetailResponse])
 def get_alerts(
     resolved: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    query = db.query(Alert).filter(Alert.resolved == resolved)
-    return query.order_by(Alert.created_at.desc()).limit(100).all()
+    alerts = (
+        db.query(Alert)
+        .filter(Alert.resolved == resolved)
+        .order_by(Alert.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    site_ids = {a.site_id for a in alerts}
+    sites = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()} if site_ids else {}
+
+    return [
+        AlertDetailResponse(
+            id=a.id,
+            site_id=a.site_id,
+            site_name=sites[a.site_id].name if a.site_id in sites else f"Site #{a.site_id}",
+            site_url=sites[a.site_id].url if a.site_id in sites else "",
+            alert_type=a.alert_type,
+            message=a.message,
+            notified=a.notified,
+            resolved=a.resolved,
+            created_at=a.created_at,
+            resolved_at=a.resolved_at,
+        )
+        for a in alerts
+    ]
 
 
 @router.get("/alert-history", response_model=list[AlertDetailResponse])
@@ -111,10 +134,12 @@ def resolve_alert(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from datetime import datetime, timezone
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
     alert.resolved = True
+    alert.resolved_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(alert)
     return alert
