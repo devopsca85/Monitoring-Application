@@ -70,65 +70,86 @@ async def run_uptime_check(site: dict) -> dict:
         }
 
 
+def _normalize_selector(indicator: str) -> list[str]:
+    """Generate a list of CSS selectors to try from user input.
+
+    Users may enter selectors in many formats:
+      - "#myId"                          → already valid
+      - ".myClass"                       → already valid
+      - "myId"                           → try as #myId
+      - "myId.table.table-striped"       → try as #myId.table.table-striped
+      - "ElementID.class1.class2"        → try as #ElementID.class1.class2
+    """
+    selectors = [indicator]
+
+    # If it doesn't start with #, ., [, or a known HTML tag prefix,
+    # the user likely forgot the # — prepend it
+    if not indicator.startswith(("#", ".", "[", "*", ":")):
+        selectors.insert(0, f"#{indicator}")
+
+    # If it contains dots, the part before the first dot might be an ID
+    # e.g. "TabContainer1_tbTraining.table.table-striped"
+    #   → #TabContainer1_tbTraining.table.table-striped
+    if "." in indicator and not indicator.startswith(("#", ".")):
+        parts = indicator.split(".", 1)
+        selectors.insert(0, f"#{parts[0]}.{parts[1]}")
+
+    return selectors
+
+
 async def _check_indicator(page, indicator: str) -> bool:
     """Check if a success indicator exists on the page.
-    Tries multiple strategies: CSS selector, id attribute, URL fragment, page text.
+    Tries multiple strategies: CSS selectors, id/class lookup, URL, page text.
     """
-    # Strategy 1: Direct CSS selector (handles #id, .class, [attr], tag, etc.)
-    try:
-        el = await page.query_selector(indicator)
-        if el:
-            return True
-    except Exception:
-        pass
+    selectors = _normalize_selector(indicator)
 
-    # Strategy 2: If indicator looks like an id (e.g. "#myElement"), also try
-    # by id attribute directly in case the selector engine has issues
-    if indicator.startswith("#") and len(indicator) > 1:
-        raw_id = indicator[1:]
+    # Strategy 1: Try all generated CSS selectors
+    for sel in selectors:
+        try:
+            el = await page.query_selector(sel)
+            if el:
+                return True
+        except Exception:
+            pass
+
+    # Strategy 2: Extract the ID part and search by attribute
+    # Handles "MyId.class1.class2" → look for [id="MyId"]
+    raw_id = indicator.split(".")[0].lstrip("#")
+    if raw_id:
         try:
             el = await page.query_selector(f'[id="{raw_id}"]')
             if el:
                 return True
         except Exception:
             pass
-        # Also try case-insensitive id match
         try:
-            el = await page.query_selector(f'[id="{raw_id}" i]')
+            el = await page.query_selector(f'[id*="{raw_id}"]')
             if el:
                 return True
         except Exception:
             pass
 
-    # Strategy 3: If indicator looks like a class (e.g. ".dashboard"), also try
-    # by class attribute
-    if indicator.startswith(".") and len(indicator) > 1:
-        raw_class = indicator[1:]
-        try:
-            el = await page.query_selector(f'[class*="{raw_class}"]')
-            if el:
-                return True
-        except Exception:
-            pass
-
-    # Strategy 4: Check if the current URL contains the indicator text
-    current_url = page.url
-    clean = indicator.lstrip("#.").lower()
-    if clean and clean in current_url.lower():
-        return True
-
-    # Strategy 5: Check visible text content on the page
+    # Strategy 3: Check if any element's id contains the indicator text
     try:
-        body_text = await page.inner_text("body")
-        if clean in body_text.lower():
+        el = await page.query_selector(f'[id*="{raw_id}" i]')
+        if el:
             return True
     except Exception:
         pass
 
-    # Strategy 6: Check full HTML (handles hidden elements, attributes, etc.)
+    # Strategy 4: Check if the current URL contains the indicator text
+    clean = indicator.lstrip("#.").split(".")[0].lower()
+    current_url = page.url
+    if clean and clean in current_url.lower():
+        return True
+
+    # Strategy 5: Check full HTML source for the id/class string
     try:
         html = await page.content()
-        if clean in html.lower():
+        # Look for the raw indicator text in HTML (id="...", class="...", etc.)
+        if indicator.lower() in html.lower():
+            return True
+        if raw_id.lower() in html.lower():
             return True
     except Exception:
         pass
