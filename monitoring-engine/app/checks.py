@@ -103,22 +103,32 @@ async def run_login_check(
 
             # Wait for navigation
             await bpage.wait_for_load_state("domcontentloaded")
+            # Extra wait for JS-heavy pages to render
+            await bpage.wait_for_timeout(2000)
 
-            # Verify success
+            # Verify success — supports CSS selectors (#id, .class), XPath, or text
             if credentials.get("success_indicator"):
+                indicator = credentials["success_indicator"].strip()
                 try:
+                    # Try CSS selector first (handles #id, .class, tag, etc.)
                     await bpage.wait_for_selector(
-                        credentials["success_indicator"], timeout=10000
+                        indicator, timeout=15000, state="visible"
                     )
                 except Exception:
-                    elapsed = (time.time() - start) * 1000
-                    await browser.close()
-                    return {
-                        "status": "critical",
-                        "response_time_ms": elapsed,
-                        "status_code": 200,
-                        "error_message": "Login succeeded but success indicator not found",
-                    }
+                    # Fallback: check if it matches as text content on the page
+                    try:
+                        page_text = await bpage.inner_text("body")
+                        if indicator.lstrip("#.").lower() not in page_text.lower():
+                            raise Exception("not found")
+                    except Exception:
+                        elapsed = (time.time() - start) * 1000
+                        await browser.close()
+                        return {
+                            "status": "critical",
+                            "response_time_ms": elapsed,
+                            "status_code": 200,
+                            "error_message": f"Login succeeded but success indicator '{indicator}' not found on page",
+                        }
 
             # If subpages are configured, validate them after login
             overall_status = "ok"

@@ -111,14 +111,23 @@ async def send_alert(
     message: str,
 ) -> None:
     subject = f"[{status.upper()}] Monitoring Alert: {site_name}"
+
+    color_map_email = {
+        "ok": "#38a169",
+        "warning": "#fc5c1d",
+        "critical": "#b82105",
+    }
+    banner_color = color_map_email.get(status, "#b82105")
+    status_emoji = {"ok": "RECOVERED", "warning": "WARNING", "critical": "DOWN"}.get(status, status.upper())
+
     html_body = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px;">
-        <div style="background: {'#b82105' if status == 'critical' else '#fc5c1d'}; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-            <h2 style="margin: 0;">{subject}</h2>
+        <div style="background: {banner_color}; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0;">[{status_emoji}] {site_name}</h2>
         </div>
         <div style="background: #f8f9fa; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e9ecef;">
             <p><strong>Site:</strong> {site_name}</p>
-            <p><strong>Status:</strong> {status}</p>
+            <p><strong>Status:</strong> <span style="color: {banner_color}; font-weight: bold;">{status.upper()}</span></p>
             <p><strong>Details:</strong> {message}</p>
         </div>
     </div>
