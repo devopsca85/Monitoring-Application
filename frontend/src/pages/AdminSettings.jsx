@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSystemSettings, updateSmtpSettings, updateTeamsSettings, testSmtp } from '../services/api';
+import { getSystemSettings, updateSmtpSettings, updateTeamsSettings, testSmtp, testTeams } from '../services/api';
 
 export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
@@ -166,7 +166,15 @@ export default function AdminSettings() {
             <label>Webhook URL {teamsSet && <span style={{ color: 'var(--color-status-ok)', fontSize: '12px' }}>(currently set — leave blank to keep)</span>}</label>
             <input value={teams.teams_webhook_url} onChange={(e) => setTeams({ ...teams, teams_webhook_url: e.target.value })} placeholder={teamsSet ? 'Leave blank to keep current webhook' : 'https://your-org.webhook.office.com/webhookb2/...'} />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>Save Teams Settings</button>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+            <button type="submit" className="btn btn-primary">Save Teams Settings</button>
+            {teamsSet && (
+              <button type="button" onClick={async () => {
+                try { await testTeams(); showMsg('Test message sent to Teams'); }
+                catch (err) { showMsg(err.response?.data?.detail || 'Teams test failed', 'error'); }
+              }} className="btn btn-outline">Test Teams</button>
+            )}
+          </div>
         </div>
       </form>
 

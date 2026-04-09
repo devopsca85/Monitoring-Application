@@ -175,9 +175,48 @@ def update_teams_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    _set_setting(db, "teams_webhook_url", data.teams_webhook_url, encrypted=True)
+    if data.teams_webhook_url:
+        _set_setting(db, "teams_webhook_url", data.teams_webhook_url, encrypted=True)
     db.commit()
     return {"status": "Teams settings saved"}
+
+
+@router.post("/settings/teams/test")
+async def test_teams(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Send a test message to the configured Teams webhook."""
+    webhook_url = _get_setting(db, "teams_webhook_url")
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="Teams webhook URL not configured")
+
+    import httpx
+    card = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "007AFF",
+        "summary": "Test — Monitoring Application",
+        "sections": [
+            {
+                "activityTitle": "Test — Monitoring Application",
+                "text": "This is a test notification. Your Teams webhook is configured correctly.",
+                "markdown": True,
+            }
+        ],
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                webhook_url,
+                json=card,
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+        return {"status": "Test message sent to Teams"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Teams test failed: {str(e)}")
 
 
 @router.post("/settings/smtp/test")

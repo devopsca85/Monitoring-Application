@@ -61,5 +61,6 @@ export const getSystemSettings = () => api.get('/admin/settings');
 export const updateSmtpSettings = (data) => api.put('/admin/settings/smtp', data);
 export const updateTeamsSettings = (data) => api.put('/admin/settings/teams', data);
 export const testSmtp = (data) => api.post('/admin/settings/smtp/test', data);
+export const testTeams = () => api.post('/admin/settings/teams/test');
 
 export default api;
