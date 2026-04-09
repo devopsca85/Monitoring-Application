@@ -29,12 +29,28 @@ async def run_uptime_check(site: dict) -> dict:
 
             await browser.close()
 
+            if status_code >= 500:
+                return {
+                    "status": "critical",
+                    "response_time_ms": elapsed,
+                    "status_code": status_code,
+                    "error_message": f"HTTP {status_code} Server Error",
+                }
+
+            if status_code == 404:
+                return {
+                    "status": "critical",
+                    "response_time_ms": elapsed,
+                    "status_code": status_code,
+                    "error_message": f"HTTP 404 Not Found",
+                }
+
             if status_code >= 400:
                 return {
                     "status": "critical",
                     "response_time_ms": elapsed,
                     "status_code": status_code,
-                    "error_message": f"HTTP {status_code}",
+                    "error_message": f"HTTP {status_code} Client Error",
                 }
 
             return {
