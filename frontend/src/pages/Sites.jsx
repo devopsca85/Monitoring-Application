@@ -42,7 +42,8 @@ export default function Sites() {
                   <td><span className="badge badge-ok">{site.check_type}</span></td>
                   <td>{site.check_interval_minutes}m</td>
                   <td><span className={`badge badge-${site.is_active ? 'ok' : 'warning'}`}>{site.is_active ? 'Active' : 'Paused'}</span></td>
-                  <td>
+                  <td style={{ display: 'flex', gap: '8px' }}>
+                    <Link to={`/sites/${site.id}/edit`} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>Edit</Link>
                     <button onClick={() => handleDelete(site.id, site.name)} className="btn btn-danger" style={{ padding: '4px 12px', fontSize: '12px' }}>Delete</button>
                   </td>
                 </tr>

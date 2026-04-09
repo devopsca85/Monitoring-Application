@@ -1,9 +1,12 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { createSite } from '../services/api';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import { createSite, getSite, getSiteCredentials, updateSite } from '../services/api';
 
 export default function SiteForm() {
+  const { id } = useParams();
+  const isEdit = Boolean(id);
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(isEdit);
   const [form, setForm] = useState({
     name: '',
     url: '',
@@ -11,6 +14,7 @@ export default function SiteForm() {
     check_interval_minutes: 5,
     notification_channel: 'email',
     notification_emails: '',
+    is_active: true,
   });
   const [credentials, setCredentials] = useState({
     login_url: '',
@@ -24,22 +28,66 @@ export default function SiteForm() {
   const [pages, setPages] = useState([]);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (!isEdit) return;
+
+    Promise.all([getSite(id), getSiteCredentials(id)])
+      .then(([siteRes, credRes]) => {
+        const site = siteRes.data;
+        setForm({
+          name: site.name,
+          url: site.url,
+          check_type: site.check_type,
+          check_interval_minutes: site.check_interval_minutes,
+          notification_channel: site.notification_channel,
+          notification_emails: site.notification_emails || '',
+          is_active: site.is_active,
+        });
+        if (site.pages && site.pages.length > 0) {
+          setPages(site.pages.map((p) => ({
+            page_url: p.page_url,
+            page_name: p.page_name || '',
+            expected_element: p.expected_element || '',
+            expected_text: p.expected_text || '',
+            sort_order: p.sort_order,
+          })));
+        }
+        if (credRes.data) {
+          setCredentials({
+            login_url: credRes.data.login_url || '',
+            username_selector: credRes.data.username_selector || '#username',
+            password_selector: credRes.data.password_selector || '#password',
+            submit_selector: credRes.data.submit_selector || "button[type='submit']",
+            success_indicator: credRes.data.success_indicator || '',
+            username: '',
+            password: '',
+          });
+        }
+      })
+      .catch(() => setError('Failed to load site'))
+      .finally(() => setLoading(false));
+  }, [id, isEdit]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     try {
       const payload = { ...form };
-      if (form.check_type === 'login') {
+      if (form.check_type === 'login' || form.check_type === 'multi_page') {
         payload.credentials = credentials;
       }
       if (form.check_type === 'multi_page') {
-        payload.credentials = credentials;
         payload.pages = pages;
       }
-      await createSite(payload);
+
+      if (isEdit) {
+        await updateSite(id, payload);
+      } else {
+        await createSite(payload);
+      }
       navigate('/sites');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create site');
+      setError(err.response?.data?.detail || `Failed to ${isEdit ? 'update' : 'create'} site`);
     }
   };
 
@@ -57,12 +105,14 @@ export default function SiteForm() {
     setPages(pages.filter((_, i) => i !== idx));
   };
 
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading...</div>;
+
   return (
     <div>
       <div className="page-header">
         <div>
           <Link to="/sites" style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>&larr; Back to Sites</Link>
-          <h2 style={{ marginTop: '4px' }}>Add New Site</h2>
+          <h2 style={{ marginTop: '4px' }}>{isEdit ? 'Edit Site' : 'Add New Site'}</h2>
         </div>
       </div>
 
@@ -115,11 +165,25 @@ export default function SiteForm() {
               <input value={form.notification_emails} onChange={(e) => setForm({ ...form, notification_emails: e.target.value })} placeholder="admin@company.com, ops@company.com" />
             </div>
           </div>
+          {isEdit && (
+            <div className="form-group">
+              <label>Status</label>
+              <select value={form.is_active ? 'true' : 'false'} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })}>
+                <option value="true">Active</option>
+                <option value="false">Paused</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {(form.check_type === 'login' || form.check_type === 'multi_page') && (
           <div className="card">
             <div className="card-header"><h3>Login Credentials</h3></div>
+            {isEdit && (
+              <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+                Leave username and password blank to keep the existing values.
+              </p>
+            )}
             <div className="form-row">
               <div className="form-group">
                 <label>Login URL</label>
@@ -132,12 +196,12 @@ export default function SiteForm() {
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Username</label>
-                <input value={credentials.username} onChange={(e) => setCredentials({ ...credentials, username: e.target.value })} />
+                <label>Username{isEdit ? ' (leave blank to keep current)' : ''}</label>
+                <input value={credentials.username} onChange={(e) => setCredentials({ ...credentials, username: e.target.value })} placeholder={isEdit ? 'Leave blank to keep current' : ''} required={!isEdit} />
               </div>
               <div className="form-group">
-                <label>Password</label>
-                <input type="password" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} />
+                <label>Password{isEdit ? ' (leave blank to keep current)' : ''}</label>
+                <input type="password" value={credentials.password} onChange={(e) => setCredentials({ ...credentials, password: e.target.value })} placeholder={isEdit ? 'Leave blank to keep current' : ''} required={!isEdit} />
               </div>
             </div>
             <div className="form-row">
@@ -195,7 +259,9 @@ export default function SiteForm() {
           </div>
         )}
 
-        <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>Create Site</button>
+        <button type="submit" className="btn btn-primary" style={{ marginTop: '8px' }}>
+          {isEdit ? 'Save Changes' : 'Create Site'}
+        </button>
       </form>
     </div>
   );

@@ -37,6 +37,7 @@ export const getSite = (id) => api.get(`/sites/${id}`);
 export const createSite = (data) => api.post('/sites/', data);
 export const updateSite = (id, data) => api.put(`/sites/${id}`, data);
 export const deleteSite = (id) => api.delete(`/sites/${id}`);
+export const getSiteCredentials = (id) => api.get(`/sites/${id}/credentials`);
 
 // Monitoring
 export const getDashboardStats = () => api.get('/monitoring/dashboard');

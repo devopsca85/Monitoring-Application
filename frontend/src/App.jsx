@@ -43,6 +43,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/sites" element={<Sites />} />
           <Route path="/sites/new" element={<SiteForm />} />
+          <Route path="/sites/:id/edit" element={<SiteForm />} />
           <Route path="/sites/:id" element={<SiteDetail />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="*" element={<Navigate to="/" />} />

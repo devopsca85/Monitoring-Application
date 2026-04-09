@@ -54,6 +54,16 @@ class SiteCreate(BaseModel):
     pages: list[SitePageCreate] = []
 
 
+class SiteCredentialResponse(BaseModel):
+    id: int
+    login_url: str | None
+    username_selector: str | None
+    password_selector: str | None
+    submit_selector: str | None
+    success_indicator: str | None
+    model_config = {"from_attributes": True}
+
+
 class SiteUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
@@ -62,6 +72,8 @@ class SiteUpdate(BaseModel):
     is_active: bool | None = None
     notification_channel: NotificationChannel | None = None
     notification_emails: str | None = None
+    credentials: SiteCredentialCreate | None = None
+    pages: list[SitePageCreate] | None = None
 
 
 class SitePageResponse(BaseModel):
