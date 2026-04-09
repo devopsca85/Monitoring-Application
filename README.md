@@ -96,21 +96,25 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 ├── scheduler/            # Azure Functions timer trigger
 │   └── function_app.py
 ├── infrastructure/       # Azure Bicep IaC
-│   └── main.bicep
+│   ├── main.tf            # Terraform resources
+│   ├── variables.tf       # Input variables
+│   ├── outputs.tf         # Output values
+│   └── main.bicep         # Bicep (alternative)
 └── docker-compose.yml    # Local development
 ```
 
 ## Deploy to Azure
 
-### 1. Create Resources (Bicep)
+### 1. Create Resources (Terraform)
 
 ```bash
-az group create --name monitoring-rg --location eastus
+cd infrastructure
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
 
-az deployment group create \
-  --resource-group monitoring-rg \
-  --template-file infrastructure/main.bicep \
-  --parameters prefix=monitor mysqlAdminPassword=YourSecurePassword123!
+terraform init
+terraform plan
+terraform apply
 ```
 
 ### 2. Build & Push Container Images

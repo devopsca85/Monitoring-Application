@@ -1,0 +1,3 @@
+location             = "eastus"
+prefix               = "monitor"
+mysql_admin_password = "YourSecurePassword123!"
