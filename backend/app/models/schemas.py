@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
     full_name: str | None
     is_active: bool
     is_admin: bool
+    created_at: datetime | None = None
     model_config = {"from_attributes": True}
 
 
@@ -146,3 +147,51 @@ class DashboardStats(BaseModel):
     sites_down: int
     sites_warning: int
     avg_response_time: float
+
+
+# --- Admin: User Management ---
+class AdminUserCreate(BaseModel):
+    email: str
+    password: str
+    full_name: str | None = None
+    is_admin: bool = False
+    is_active: bool = True
+
+
+class AdminUserUpdate(BaseModel):
+    email: str | None = None
+    password: str | None = None
+    full_name: str | None = None
+    is_admin: bool | None = None
+    is_active: bool | None = None
+
+
+# --- Admin: System Settings ---
+class SystemSettingValue(BaseModel):
+    key: str
+    value: str
+
+
+class SystemSettingsResponse(BaseModel):
+    smtp_host: str = ""
+    smtp_port: str = "587"
+    smtp_user: str = ""
+    smtp_password_set: bool = False
+    smtp_from_email: str = ""
+    smtp_use_tls: str = "true"
+    teams_webhook_url: str = ""
+    teams_webhook_set: bool = False
+
+class SmtpSettingsUpdate(BaseModel):
+    smtp_host: str = ""
+    smtp_port: str = "587"
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: str = "true"
+
+class TeamsSettingsUpdate(BaseModel):
+    teams_webhook_url: str = ""
+
+class SmtpTestRequest(BaseModel):
+    to_email: str

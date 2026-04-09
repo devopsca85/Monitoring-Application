@@ -48,4 +48,16 @@ export const getAlerts = (resolved = false) =>
 export const resolveAlert = (id) => api.post(`/monitoring/alerts/${id}/resolve`);
 export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`);
 
+// Admin — Users
+export const getUsers = () => api.get('/admin/users');
+export const createUser = (data) => api.post('/admin/users', data);
+export const updateUser = (id, data) => api.put(`/admin/users/${id}`, data);
+export const deleteUser = (id) => api.delete(`/admin/users/${id}`);
+
+// Admin — Settings
+export const getSystemSettings = () => api.get('/admin/settings');
+export const updateSmtpSettings = (data) => api.put('/admin/settings/smtp', data);
+export const updateTeamsSettings = (data) => api.put('/admin/settings/teams', data);
+export const testSmtp = (data) => api.post('/admin/settings/smtp/test', data);
+
 export default api;

@@ -117,6 +117,16 @@ class MonitoringResult(Base):
     site = relationship("Site", back_populates="results")
 
 
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(255), unique=True, nullable=False, index=True)
+    value = Column(Text, nullable=False, default="")
+    is_encrypted = Column(Boolean, default=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class Alert(Base):
     __tablename__ = "alerts"
 

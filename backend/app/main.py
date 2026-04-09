@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import Base, engine
-from app.routes import auth, monitoring, sites
+from app.routes import admin, auth, monitoring, sites
 
 settings = get_settings()
 
@@ -43,12 +43,28 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(sites.router, prefix=settings.API_V1_PREFIX)
 app.include_router(monitoring.router, prefix=settings.API_V1_PREFIX)
+app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.on_event("startup")
 async def startup():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
+
+    # Ensure at least one admin user exists
+    from app.core.database import SessionLocal
+    from app.models.models import User
+    db = SessionLocal()
+    try:
+        admin_count = db.query(User).filter(User.is_admin == True).count()
+        if admin_count == 0:
+            first_user = db.query(User).order_by(User.id).first()
+            if first_user:
+                first_user.is_admin = True
+                db.commit()
+                logger.info(f"Promoted '{first_user.email}' to admin (no admin existed)")
+    finally:
+        db.close()
 
     from app.services.scheduler_service import start_scheduler
     start_scheduler()

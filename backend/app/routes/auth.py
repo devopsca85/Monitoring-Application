@@ -41,16 +41,36 @@ def get_current_user(
     return user
 
 
+@router.get("/setup-check")
+def setup_check(db: Session = Depends(get_db)):
+    """Check if the app needs initial setup (no users exist)."""
+    user_count = db.query(User).count()
+    return {"needs_setup": user_count == 0}
+
+
 @router.post("/register", response_model=UserResponse)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    """Register a new user. Only available when no users exist (initial setup).
+    After the first user is created, use the Admin panel to add users."""
+    user_count = db.query(User).count()
+
+    # After first user exists, only admins can create users (via /admin/users)
+    if user_count > 0:
+        raise HTTPException(
+            status_code=403,
+            detail="Registration is disabled. Ask an admin to create your account.",
+        )
+
     existing = db.query(User).filter(User.email == user_in.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # First user is automatically an admin
     user = User(
         email=user_in.email,
         hashed_password=hash_password(user_in.password),
         full_name=user_in.full_name,
+        is_admin=True,
     )
     db.add(user)
     db.commit()

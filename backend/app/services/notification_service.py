@@ -1,47 +1,77 @@
-import json
 import logging
+import smtplib
+from email.mime.text import MIMEText
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.database import SessionLocal
+from app.core.security import decrypt_credential
+from app.models.models import SystemSetting
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
+
+
+def _get_setting(db, key: str) -> str:
+    row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    if not row:
+        return ""
+    if row.is_encrypted and row.value:
+        try:
+            return decrypt_credential(row.value)
+        except Exception:
+            return ""
+    return row.value
 
 
 async def send_email_alert(to_emails: list[str], subject: str, body: str) -> bool:
-    if not settings.AZURE_COMM_CONNECTION_STRING:
-        logger.warning("Azure Communication Services not configured, skipping email")
-        return False
+    """Send email using SMTP settings stored in the database."""
+    db = SessionLocal()
+    try:
+        host = _get_setting(db, "smtp_host")
+        if not host:
+            logger.warning("SMTP not configured in admin settings, skipping email")
+            return False
+
+        port = int(_get_setting(db, "smtp_port") or "587")
+        user = _get_setting(db, "smtp_user")
+        password = _get_setting(db, "smtp_password")
+        from_email = _get_setting(db, "smtp_from_email") or user
+        use_tls = _get_setting(db, "smtp_use_tls") != "false"
+    finally:
+        db.close()
+
+    msg = MIMEText(body, "html")
+    msg["Subject"] = subject
+    msg["From"] = from_email
+    msg["To"] = ", ".join(to_emails)
 
     try:
-        from azure.communication.email import EmailClient
-
-        client = EmailClient.from_connection_string(
-            settings.AZURE_COMM_CONNECTION_STRING
-        )
-        message = {
-            "senderAddress": settings.AZURE_COMM_SENDER_EMAIL,
-            "recipients": {
-                "to": [{"address": email} for email in to_emails],
-            },
-            "content": {
-                "subject": subject,
-                "html": body,
-            },
-        }
-        poller = client.begin_send(message)
-        poller.result()
+        if use_tls:
+            server = smtplib.SMTP(host, port, timeout=15)
+            server.starttls()
+        else:
+            server = smtplib.SMTP(host, port, timeout=15)
+        if user and password:
+            server.login(user, password)
+        server.sendmail(from_email, to_emails, msg.as_string())
+        server.quit()
         logger.info(f"Email sent to {to_emails}")
         return True
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"Failed to send email via SMTP: {e}")
         return False
 
 
 async def send_teams_alert(title: str, message: str, color: str = "FF0000") -> bool:
-    if not settings.TEAMS_WEBHOOK_URL:
-        logger.warning("Teams webhook not configured, skipping notification")
+    """Send Teams notification using webhook URL stored in the database."""
+    db = SessionLocal()
+    try:
+        webhook_url = _get_setting(db, "teams_webhook_url")
+    finally:
+        db.close()
+
+    if not webhook_url:
+        logger.warning("Teams webhook not configured in admin settings, skipping")
         return False
 
     try:
@@ -61,7 +91,7 @@ async def send_teams_alert(title: str, message: str, color: str = "FF0000") -> b
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                settings.TEAMS_WEBHOOK_URL,
+                webhook_url,
                 json=card,
                 headers={"Content-Type": "application/json"},
             )
