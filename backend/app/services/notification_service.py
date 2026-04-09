@@ -136,8 +136,17 @@ async def send_alert(
     color_map = {"critical": "FF0000", "warning": "FFA500", "ok": "00FF00"}
     teams_color = color_map.get(status, "FF0000")
 
+    # Send email based on site-level channel setting
     if channel in ("email", "both") and to_emails:
         await send_email_alert(to_emails, subject, html_body)
 
-    if channel in ("teams", "both"):
+    # Teams: always send if webhook is configured (global setting),
+    # regardless of site-level channel — Teams is a system-wide notification
+    db = SessionLocal()
+    try:
+        teams_configured = bool(_get_setting(db, "teams_webhook_url"))
+    finally:
+        db.close()
+
+    if teams_configured:
         await send_teams_alert(subject, message, teams_color)

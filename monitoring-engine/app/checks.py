@@ -74,22 +74,16 @@ def _normalize_selector(indicator: str) -> list[str]:
     """Generate a list of CSS selectors to try from user input.
 
     Users may enter selectors in many formats:
-      - "#myId"                          → already valid
-      - ".myClass"                       → already valid
-      - "myId"                           → try as #myId
-      - "myId.table.table-striped"       → try as #myId.table.table-striped
-      - "ElementID.class1.class2"        → try as #ElementID.class1.class2
+      - "#myId"                          -> already valid
+      - ".myClass"                       -> already valid
+      - "myId"                           -> try as #myId
+      - "myId.table.table-striped"       -> try as #myId.table.table-striped
     """
     selectors = [indicator]
 
-    # If it doesn't start with #, ., [, or a known HTML tag prefix,
-    # the user likely forgot the # — prepend it
     if not indicator.startswith(("#", ".", "[", "*", ":")):
         selectors.insert(0, f"#{indicator}")
 
-    # If it contains dots, the part before the first dot might be an ID
-    # e.g. "TabContainer1_tbTraining.table.table-striped"
-    #   → #TabContainer1_tbTraining.table.table-striped
     if "." in indicator and not indicator.startswith(("#", ".")):
         parts = indicator.split(".", 1)
         selectors.insert(0, f"#{parts[0]}.{parts[1]}")
@@ -97,64 +91,105 @@ def _normalize_selector(indicator: str) -> list[str]:
     return selectors
 
 
-async def _check_indicator(page, indicator: str) -> bool:
-    """Check if a success indicator exists on the page.
-    Tries multiple strategies: CSS selectors, id/class lookup, URL, page text.
+async def _check_indicator_strict(page, indicator: str) -> bool:
+    """Check if a success indicator exists on the page using STRICT methods only.
+    Only returns True if the element is actually present and visible in the DOM.
+    Does NOT check raw HTML text (too many false positives on login pages).
     """
     selectors = _normalize_selector(indicator)
 
-    # Strategy 1: Try all generated CSS selectors
+    # Strategy 1: Try all normalized CSS selectors — element must be visible
     for sel in selectors:
         try:
             el = await page.query_selector(sel)
             if el:
+                visible = await el.is_visible()
+                if visible:
+                    logger.info(f"Indicator found (visible): '{sel}'")
+                    return True
+        except Exception:
+            pass
+
+    # Strategy 2: Try all selectors — element exists in DOM (may be hidden)
+    for sel in selectors:
+        try:
+            el = await page.query_selector(sel)
+            if el:
+                logger.info(f"Indicator found (in DOM): '{sel}'")
                 return True
         except Exception:
             pass
 
-    # Strategy 2: Extract the ID part and search by attribute
-    # Handles "MyId.class1.class2" → look for [id="MyId"]
+    # Strategy 3: Search by ID attribute directly
     raw_id = indicator.split(".")[0].lstrip("#")
     if raw_id:
         try:
             el = await page.query_selector(f'[id="{raw_id}"]')
             if el:
+                logger.info(f"Indicator found by id attr: '{raw_id}'")
                 return True
         except Exception:
             pass
+        # Partial ID match
         try:
             el = await page.query_selector(f'[id*="{raw_id}"]')
             if el:
+                logger.info(f"Indicator found by partial id: '{raw_id}'")
                 return True
         except Exception:
             pass
 
-    # Strategy 3: Check if any element's id contains the indicator text
-    try:
-        el = await page.query_selector(f'[id*="{raw_id}" i]')
-        if el:
-            return True
-    except Exception:
-        pass
-
-    # Strategy 4: Check if the current URL contains the indicator text
-    clean = indicator.lstrip("#.").split(".")[0].lower()
-    current_url = page.url
-    if clean and clean in current_url.lower():
-        return True
-
-    # Strategy 5: Check full HTML source for the id/class string
-    try:
-        html = await page.content()
-        # Look for the raw indicator text in HTML (id="...", class="...", etc.)
-        if indicator.lower() in html.lower():
-            return True
-        if raw_id.lower() in html.lower():
-            return True
-    except Exception:
-        pass
-
     return False
+
+
+async def _detect_login_failure(page, login_url: str) -> str | None:
+    """Detect common signs that a login has failed.
+    Returns an error message if failure detected, None otherwise.
+    """
+    current_url = page.url
+
+    # Check 1: Still on the login page (URL didn't change)
+    if current_url.rstrip("/") == login_url.rstrip("/"):
+        # Look for common error indicators
+        error_selectors = [
+            ".error", ".alert-danger", ".alert-error", ".login-error",
+            ".validation-summary-errors", ".field-validation-error",
+            "#errorMessage", "#error", ".text-danger",
+            "[role='alert']", ".invalid-feedback",
+        ]
+        for sel in error_selectors:
+            try:
+                el = await page.query_selector(sel)
+                if el:
+                    visible = await el.is_visible()
+                    if visible:
+                        text = (await el.inner_text()).strip()
+                        if text:
+                            return f"Login failed — error on page: {text[:200]}"
+            except Exception:
+                pass
+
+        return "Login failed — still on login page after submit"
+
+    # Check 2: Redirected back to login page (different URL format)
+    lower_url = current_url.lower()
+    login_keywords = ["login", "signin", "sign-in", "auth", "logon"]
+    if any(kw in lower_url for kw in login_keywords):
+        # Could be redirected to a login page, check for error messages
+        try:
+            body_text = await page.inner_text("body")
+            error_keywords = [
+                "invalid", "incorrect", "wrong password", "failed",
+                "unauthorized", "denied", "try again", "not recognized",
+            ]
+            lower_text = body_text.lower()
+            for kw in error_keywords:
+                if kw in lower_text:
+                    return f"Login failed — page contains '{kw}'"
+        except Exception:
+            pass
+
+    return None
 
 
 async def run_login_check(
@@ -170,9 +205,11 @@ async def run_login_check(
             context = await browser.new_context()
             bpage = await context.new_page()
 
+            login_url = credentials.get("login_url", "")
+
             # Navigate to login page
             await bpage.goto(
-                credentials["login_url"],
+                login_url,
                 timeout=settings.BROWSER_TIMEOUT_MS,
                 wait_until="domcontentloaded",
             )
@@ -185,59 +222,89 @@ async def run_login_check(
                 credentials["password_selector"], credentials["password"]
             )
 
+            # Remember the URL before submit
+            pre_login_url = bpage.url
+
             # Submit and wait for navigation/response
             indicator = (credentials.get("success_indicator") or "").strip()
 
-            if indicator:
-                # Click and wait for either a navigation or a network idle
-                try:
-                    async with bpage.expect_navigation(
-                        timeout=10000, wait_until="domcontentloaded"
-                    ):
-                        await bpage.click(credentials["submit_selector"])
-                except Exception:
-                    # SPA login — no navigation event, that's okay
-                    pass
-            else:
-                await bpage.click(credentials["submit_selector"])
-                try:
-                    await bpage.wait_for_load_state(
-                        "domcontentloaded", timeout=10000
-                    )
-                except Exception:
-                    pass
+            try:
+                async with bpage.expect_navigation(
+                    timeout=10000, wait_until="domcontentloaded"
+                ):
+                    await bpage.click(credentials["submit_selector"])
+            except Exception:
+                # SPA login — no navigation event, that's okay
+                pass
 
-            # Wait for page to stabilize (JS rendering, redirects, SPA transitions)
+            # Wait for page to stabilize
             try:
                 await bpage.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
                 pass
-            # Extra buffer for slow JS rendering
             await bpage.wait_for_timeout(5000)
 
-            # Verify success indicator
+            # === STEP 1: Detect obvious login failures ===
+            failure_msg = await _detect_login_failure(bpage, pre_login_url)
+
+            # If no indicator is set and failure is detected, report it
+            if not indicator and failure_msg:
+                elapsed = (time.time() - start) * 1000
+                await browser.close()
+                return {
+                    "status": "critical",
+                    "response_time_ms": elapsed,
+                    "status_code": 200,
+                    "error_message": failure_msg,
+                }
+
+            # If no indicator is set and no failure detected,
+            # check that the URL actually changed (basic login validation)
+            if not indicator and not failure_msg:
+                post_login_url = bpage.url
+                if post_login_url.rstrip("/") == pre_login_url.rstrip("/"):
+                    elapsed = (time.time() - start) * 1000
+                    await browser.close()
+                    return {
+                        "status": "warning",
+                        "response_time_ms": elapsed,
+                        "status_code": 200,
+                        "error_message": (
+                            "Login may have failed — URL did not change after submit. "
+                            "Set a Success Indicator for reliable detection."
+                        ),
+                    }
+
+            # === STEP 2: Verify success indicator (if set) ===
             if indicator:
-                found = await _check_indicator(bpage, indicator)
+                found = await _check_indicator_strict(bpage, indicator)
                 if not found:
-                    # Some sites redirect after login — wait a bit more and retry
+                    # Wait more and retry once
                     await bpage.wait_for_timeout(5000)
-                    found = await _check_indicator(bpage, indicator)
+                    found = await _check_indicator_strict(bpage, indicator)
 
                 if not found:
                     elapsed = (time.time() - start) * 1000
                     current_url = bpage.url
+
+                    # Check if it's actually a login failure
+                    if failure_msg:
+                        error = failure_msg
+                    else:
+                        error = (
+                            f"Login completed but success indicator '{indicator}' "
+                            f"not found. Current page: {current_url}"
+                        )
+
                     await browser.close()
                     return {
                         "status": "critical",
                         "response_time_ms": elapsed,
                         "status_code": 200,
-                        "error_message": (
-                            f"Login completed but success indicator '{indicator}' "
-                            f"not found. Current page: {current_url}"
-                        ),
+                        "error_message": error,
                     }
 
-            # If subpages are configured, validate them after login
+            # === STEP 3: Validate subpages (if configured) ===
             overall_status = "ok"
             if pages:
                 for pg in sorted(pages, key=lambda x: x.get("sort_order", 0)):
