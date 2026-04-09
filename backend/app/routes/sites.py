@@ -40,6 +40,7 @@ async def create_site(
         url=site_in.url,
         check_type=site_in.check_type,
         check_interval_minutes=site_in.check_interval_minutes,
+        slow_threshold_ms=site_in.slow_threshold_ms,
         notification_channel=site_in.notification_channel,
         notification_emails=site_in.notification_emails,
     )

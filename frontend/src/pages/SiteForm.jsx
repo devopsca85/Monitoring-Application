@@ -12,6 +12,7 @@ export default function SiteForm() {
     url: '',
     check_type: 'uptime',
     check_interval_minutes: 5,
+    slow_threshold_ms: 8000,
     notification_channel: 'email',
     notification_emails: '',
     is_active: true,
@@ -40,6 +41,7 @@ export default function SiteForm() {
           url: site.url,
           check_type: site.check_type,
           check_interval_minutes: site.check_interval_minutes,
+          slow_threshold_ms: site.slow_threshold_ms || 5000,
           notification_channel: site.notification_channel,
           notification_emails: site.notification_emails || '',
           is_active: site.is_active,
@@ -156,6 +158,22 @@ export default function SiteForm() {
             </div>
           </div>
           <div className="form-row">
+            <div className="form-group">
+              <label>Slow Response Threshold</label>
+              <select value={String(form.slow_threshold_ms)} onChange={(e) => setForm({ ...form, slow_threshold_ms: parseInt(e.target.value) })}>
+                <option value="2000">2 seconds</option>
+                <option value="3000">3 seconds</option>
+                <option value="5000">5 seconds</option>
+                <option value="8000">8 seconds (default)</option>
+                <option value="10000">10 seconds</option>
+                <option value="15000">15 seconds</option>
+                <option value="20000">20 seconds</option>
+                <option value="30000">30 seconds</option>
+              </select>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', display: 'block' }}>
+                Alert if page load takes longer than this.
+              </span>
+            </div>
             <div className="form-group">
               <label>Notification Channel</label>
               <select value={form.notification_channel} onChange={(e) => setForm({ ...form, notification_channel: e.target.value })}>

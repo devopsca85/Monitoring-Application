@@ -57,6 +57,7 @@ class SiteCreate(BaseModel):
     url: str
     check_type: CheckType = CheckType.UPTIME
     check_interval_minutes: int = 5
+    slow_threshold_ms: int = 8000
     notification_channel: NotificationChannel = NotificationChannel.EMAIL
     notification_emails: str = ""
     credentials: SiteCredentialCreate | None = None
@@ -79,6 +80,7 @@ class SiteUpdate(BaseModel):
     url: str | None = None
     check_type: CheckType | None = None
     check_interval_minutes: int | None = None
+    slow_threshold_ms: int | None = None
     is_active: bool | None = None
     notification_channel: NotificationChannel | None = None
     notification_emails: str | None = None
@@ -102,6 +104,7 @@ class SiteResponse(BaseModel):
     url: str
     check_type: CheckType
     check_interval_minutes: int
+    slow_threshold_ms: int
     is_active: bool
     notification_channel: NotificationChannel
     notification_emails: str | None

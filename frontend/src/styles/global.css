@@ -332,6 +332,17 @@ th {
   50% { opacity: 0.6; }
 }
 
+@keyframes alarmPulse {
+  0%, 100% { box-shadow: 0 4px 15px rgba(229, 62, 62, 0.4); }
+  50% { box-shadow: 0 4px 25px rgba(229, 62, 62, 0.7); }
+}
+
+@keyframes alarmShake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-12deg); }
+  75% { transform: rotate(12deg); }
+}
+
 @keyframes slideInRight {
   from {
     opacity: 0;

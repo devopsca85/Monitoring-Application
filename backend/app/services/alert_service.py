@@ -81,7 +81,30 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
         )
 
         if result.status == AlertStatus.OK:
-            # Resolve any open alerts
+            # Check for slowness even on OK status
+            slow_threshold = site.slow_threshold_ms or 8000
+            response_time = result.response_time_ms or 0
+
+            if response_time > slow_threshold:
+                slow_msg = (
+                    f"SLOW: {site.name} ({site.url}) responded in "
+                    f"{int(response_time)}ms (threshold: {slow_threshold}ms)"
+                )
+                logger.warning(f"Slowness alert for {site.name}: {int(response_time)}ms > {slow_threshold}ms")
+
+                # Create a warning-level alert for slowness
+                slow_result = MonitoringResult(
+                    site_id=result.site_id,
+                    check_type=result.check_type,
+                    status=AlertStatus.WARNING,
+                    response_time_ms=result.response_time_ms,
+                    status_code=result.status_code,
+                    error_message=slow_msg,
+                )
+                await _create_and_send_alert(db, site, slow_result, slow_msg)
+                return
+
+            # Resolve any open alerts (site is OK and fast)
             open_alerts = (
                 db.query(Alert)
                 .filter(Alert.site_id == site.id, Alert.resolved == False)
@@ -99,7 +122,7 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
                         to_emails=(site.notification_emails or "").split(","),
                         site_name=site.name,
                         status="ok",
-                        message=f"{site.name} ({site.url}) is back online.",
+                        message=f"{site.name} ({site.url}) is back online. Response: {int(response_time)}ms",
                     )
                 except Exception as e:
                     logger.error(f"Failed to send recovery alert for {site.name}: {e}")

@@ -93,6 +93,89 @@ function formatCST(dateStr) {
   }) + ' CST';
 }
 
+// --- Alarm Sound (Web Audio API — no external files) ---
+let alarmAudioCtx = null;
+let alarmInterval = null;
+
+function playAlarmBeep() {
+  try {
+    if (!alarmAudioCtx) alarmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = alarmAudioCtx.createOscillator();
+    const gain = alarmAudioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(alarmAudioCtx.destination);
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, alarmAudioCtx.currentTime);
+    osc.frequency.setValueAtTime(660, alarmAudioCtx.currentTime + 0.15);
+    osc.frequency.setValueAtTime(880, alarmAudioCtx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.3, alarmAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.5);
+    osc.start(alarmAudioCtx.currentTime);
+    osc.stop(alarmAudioCtx.currentTime + 0.5);
+  } catch (e) {
+    // Audio not available
+  }
+}
+
+function startAlarmLoop() {
+  if (alarmInterval) return;
+  playAlarmBeep();
+  alarmInterval = setInterval(playAlarmBeep, 5000); // Beep every 5 seconds
+}
+
+function stopAlarmLoop() {
+  if (alarmInterval) {
+    clearInterval(alarmInterval);
+    alarmInterval = null;
+  }
+}
+
+// --- Alarm Banner ---
+function AlarmBanner({ activeAlerts, onAcknowledge }) {
+  if (activeAlerts.length === 0) return null;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(90deg, #e53e3e, #c53030)',
+      color: 'white',
+      padding: '12px 24px',
+      borderRadius: 'var(--radius-lg)',
+      marginBottom: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '16px',
+      animation: 'alarmPulse 1.5s ease-in-out infinite',
+      boxShadow: '0 4px 15px rgba(229, 62, 62, 0.4)',
+    }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: '50%',
+        background: 'rgba(255,255,255,0.2)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '20px', flexShrink: 0,
+        animation: 'alarmShake 0.5s ease-in-out infinite',
+      }}>
+        &#128680;
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '2px' }}>
+          ALERT: {activeAlerts.length} site{activeAlerts.length > 1 ? 's' : ''} down!
+        </div>
+        <div style={{ fontSize: '12px', opacity: 0.9 }}>
+          {activeAlerts.map((a) => a.site_name || `Site #${a.site_id}`).join(', ')}
+        </div>
+      </div>
+      <button onClick={onAcknowledge} style={{
+        background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)',
+        color: 'white', padding: '8px 16px', borderRadius: '20px',
+        cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+        whiteSpace: 'nowrap',
+      }}>
+        Acknowledge
+      </button>
+    </div>
+  );
+}
+
 function ToastContainer({ toasts, onDismiss }) {
   return (
     <div style={{
@@ -147,6 +230,8 @@ export default function Dashboard() {
   const [alerts, setAlerts] = useState([]);
   const [alertHistory, setAlertHistory] = useState([]);
   const [toasts, setToasts] = useState([]);
+  const [alarmActive, setAlarmActive] = useState(false);
+  const [alarmAcknowledged, setAlarmAcknowledged] = useState(false);
   const [refreshIn, setRefreshIn] = useState(15);
   const nextRefreshAt = useRef(Date.now() + 15000);
   const knownAlertIds = useRef(new Set());
@@ -160,6 +245,21 @@ export default function Dashboard() {
 
   const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
+  // Alarm sound control
+  useEffect(() => {
+    if (alarmActive && !alarmAcknowledged) {
+      startAlarmLoop();
+    } else {
+      stopAlarmLoop();
+    }
+    return () => stopAlarmLoop();
+  }, [alarmActive, alarmAcknowledged]);
+
+  const handleAcknowledge = () => {
+    setAlarmAcknowledged(true);
+    stopAlarmLoop();
+  };
+
   const loadData = () => {
     Promise.all([
       getDashboardStats().then((r) => setStats(r.data)).catch(() => {}),
@@ -168,18 +268,28 @@ export default function Dashboard() {
         const newAlerts = r.data;
         setAlerts(newAlerts);
 
-        // Detect NEW alerts since last refresh
+        // Alarm: activate if any active alerts exist
+        if (newAlerts.length > 0) {
+          setAlarmActive(true);
+        } else {
+          setAlarmActive(false);
+          setAlarmAcknowledged(false);
+        }
+
+        // Detect NEW alerts since last refresh — toast + sound
         if (!isFirstLoad.current) {
           for (const a of newAlerts) {
             if (!knownAlertIds.current.has(a.id)) {
-              // Find site name from sitesStatus
-              const site = sitesStatus.find((s) => s.id === a.site_id);
-              const siteName = site ? site.name : `Site #${a.site_id}`;
+              const siteName = a.site_name || `Site #${a.site_id}`;
               addToast(
                 `Alert: ${siteName}`,
                 a.message || 'Monitoring alert triggered',
                 a.alert_type || 'critical',
               );
+              // Play immediate beep for new alert
+              playAlarmBeep();
+              // Reset acknowledge so alarm resumes for new incidents
+              setAlarmAcknowledged(false);
             }
           }
         }
@@ -250,6 +360,7 @@ export default function Dashboard() {
   return (
     <div>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <AlarmBanner activeAlerts={alerts} onAcknowledge={handleAcknowledge} />
       <div className="page-header">
         <h2>Dashboard</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -441,7 +552,15 @@ export default function Dashboard() {
                     )}
                   </td>
                   <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
-                    {site.last_response_time_ms != null ? `${Math.round(site.last_response_time_ms)}ms` : '--'}
+                    {site.last_response_time_ms != null ? (
+                      <span style={{
+                        color: site.is_slow ? 'var(--color-status-warning)' : undefined,
+                        fontWeight: site.is_slow ? 700 : 400,
+                      }}>
+                        {Math.round(site.last_response_time_ms)}ms
+                        {site.is_slow && ' ⚠ SLOW'}
+                      </span>
+                    ) : '--'}
                   </td>
                   <td>
                     <NextCheckTimer

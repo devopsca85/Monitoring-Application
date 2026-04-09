@@ -193,10 +193,12 @@ def sites_status(
             "url": s.url,
             "check_type": s.check_type.value,
             "check_interval_minutes": s.check_interval_minutes,
+            "slow_threshold_ms": s.slow_threshold_ms or 8000,
             "is_active": s.is_active,
             "last_status": r.status.value if r else None,
             "last_checked_at": r.checked_at.isoformat() if r and r.checked_at else None,
             "last_response_time_ms": r.response_time_ms if r else None,
+            "is_slow": (r.response_time_ms or 0) > (s.slow_threshold_ms or 8000) if r else False,
             "last_status_code": r.status_code if r else None,
             "last_error": r.error_message if r else None,
         })
