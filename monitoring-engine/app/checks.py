@@ -70,6 +70,72 @@ async def run_uptime_check(site: dict) -> dict:
         }
 
 
+async def _check_indicator(page, indicator: str) -> bool:
+    """Check if a success indicator exists on the page.
+    Tries multiple strategies: CSS selector, id attribute, URL fragment, page text.
+    """
+    # Strategy 1: Direct CSS selector (handles #id, .class, [attr], tag, etc.)
+    try:
+        el = await page.query_selector(indicator)
+        if el:
+            return True
+    except Exception:
+        pass
+
+    # Strategy 2: If indicator looks like an id (e.g. "#myElement"), also try
+    # by id attribute directly in case the selector engine has issues
+    if indicator.startswith("#") and len(indicator) > 1:
+        raw_id = indicator[1:]
+        try:
+            el = await page.query_selector(f'[id="{raw_id}"]')
+            if el:
+                return True
+        except Exception:
+            pass
+        # Also try case-insensitive id match
+        try:
+            el = await page.query_selector(f'[id="{raw_id}" i]')
+            if el:
+                return True
+        except Exception:
+            pass
+
+    # Strategy 3: If indicator looks like a class (e.g. ".dashboard"), also try
+    # by class attribute
+    if indicator.startswith(".") and len(indicator) > 1:
+        raw_class = indicator[1:]
+        try:
+            el = await page.query_selector(f'[class*="{raw_class}"]')
+            if el:
+                return True
+        except Exception:
+            pass
+
+    # Strategy 4: Check if the current URL contains the indicator text
+    current_url = page.url
+    clean = indicator.lstrip("#.").lower()
+    if clean and clean in current_url.lower():
+        return True
+
+    # Strategy 5: Check visible text content on the page
+    try:
+        body_text = await page.inner_text("body")
+        if clean in body_text.lower():
+            return True
+    except Exception:
+        pass
+
+    # Strategy 6: Check full HTML (handles hidden elements, attributes, etc.)
+    try:
+        html = await page.content()
+        if clean in html.lower():
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
 async def run_login_check(
     site: dict, credentials: dict, pages: list[dict] | None = None
 ) -> dict:
@@ -98,37 +164,57 @@ async def run_login_check(
                 credentials["password_selector"], credentials["password"]
             )
 
-            # Submit
-            await bpage.click(credentials["submit_selector"])
+            # Submit and wait for navigation/response
+            indicator = (credentials.get("success_indicator") or "").strip()
 
-            # Wait for navigation
-            await bpage.wait_for_load_state("domcontentloaded")
-            # Extra wait for JS-heavy pages to render
-            await bpage.wait_for_timeout(2000)
-
-            # Verify success — supports CSS selectors (#id, .class), XPath, or text
-            if credentials.get("success_indicator"):
-                indicator = credentials["success_indicator"].strip()
+            if indicator:
+                # Click and wait for either a navigation or a network idle
                 try:
-                    # Try CSS selector first (handles #id, .class, tag, etc.)
-                    await bpage.wait_for_selector(
-                        indicator, timeout=15000, state="visible"
+                    async with bpage.expect_navigation(
+                        timeout=10000, wait_until="domcontentloaded"
+                    ):
+                        await bpage.click(credentials["submit_selector"])
+                except Exception:
+                    # SPA login — no navigation event, that's okay
+                    pass
+            else:
+                await bpage.click(credentials["submit_selector"])
+                try:
+                    await bpage.wait_for_load_state(
+                        "domcontentloaded", timeout=10000
                     )
                 except Exception:
-                    # Fallback: check if it matches as text content on the page
-                    try:
-                        page_text = await bpage.inner_text("body")
-                        if indicator.lstrip("#.").lower() not in page_text.lower():
-                            raise Exception("not found")
-                    except Exception:
-                        elapsed = (time.time() - start) * 1000
-                        await browser.close()
-                        return {
-                            "status": "critical",
-                            "response_time_ms": elapsed,
-                            "status_code": 200,
-                            "error_message": f"Login succeeded but success indicator '{indicator}' not found on page",
-                        }
+                    pass
+
+            # Wait for page to stabilize (JS rendering, redirects, SPA transitions)
+            try:
+                await bpage.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            # Extra buffer for slow JS rendering
+            await bpage.wait_for_timeout(3000)
+
+            # Verify success indicator
+            if indicator:
+                found = await _check_indicator(bpage, indicator)
+                if not found:
+                    # Some sites redirect after login — wait a bit more and retry
+                    await bpage.wait_for_timeout(3000)
+                    found = await _check_indicator(bpage, indicator)
+
+                if not found:
+                    elapsed = (time.time() - start) * 1000
+                    current_url = bpage.url
+                    await browser.close()
+                    return {
+                        "status": "critical",
+                        "response_time_ms": elapsed,
+                        "status_code": 200,
+                        "error_message": (
+                            f"Login completed but success indicator '{indicator}' "
+                            f"not found. Current page: {current_url}"
+                        ),
+                    }
 
             # If subpages are configured, validate them after login
             overall_status = "ok"
@@ -229,8 +315,18 @@ async def run_multi_page_check(
                 await bpage.fill(
                     credentials["password_selector"], credentials["password"]
                 )
-                await bpage.click(credentials["submit_selector"])
-                await bpage.wait_for_load_state("domcontentloaded")
+                try:
+                    async with bpage.expect_navigation(
+                        timeout=10000, wait_until="domcontentloaded"
+                    ):
+                        await bpage.click(credentials["submit_selector"])
+                except Exception:
+                    pass
+                try:
+                    await bpage.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
+                await bpage.wait_for_timeout(3000)
 
             # Check each page
             overall_status = "ok"
