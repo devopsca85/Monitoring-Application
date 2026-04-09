@@ -1,0 +1,32 @@
+:root {
+  /* Primary — from fldata.com */
+  --color-primary: #007aff;
+  --color-primary-dark: #0062cc;
+  --color-navy: #001e3f;
+
+  /* Accent */
+  --color-orange: #fc5c1d;
+  --color-green: #13612e;
+  --color-red: #b82105;
+
+  /* Neutrals */
+  --color-text: #1f2121;
+  --color-text-secondary: #718096;
+  --color-bg: #edf2f7;
+  --color-bg-white: #ffffff;
+  --color-border: #e2e8f0;
+
+  /* Status */
+  --color-status-ok: #38a169;
+  --color-status-warning: #dd6b20;
+  --color-status-critical: #e53e3e;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Spacing */
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 15px 15px -10px rgba(0, 0, 0, 0.05);
+}

@@ -1,0 +1,108 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.security import encrypt_credential
+from app.models.models import Site, SiteCredential, SitePage, User
+from app.models.schemas import SiteCreate, SiteResponse, SiteUpdate
+from app.routes.auth import get_current_user
+
+router = APIRouter(prefix="/sites", tags=["sites"])
+
+
+@router.get("/", response_model=list[SiteResponse])
+def list_sites(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    return db.query(Site).all()
+
+
+@router.get("/{site_id}", response_model=SiteResponse)
+def get_site(
+    site_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    return site
+
+
+@router.post("/", response_model=SiteResponse, status_code=201)
+def create_site(
+    site_in: SiteCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    site = Site(
+        name=site_in.name,
+        url=site_in.url,
+        check_type=site_in.check_type,
+        check_interval_minutes=site_in.check_interval_minutes,
+        notification_channel=site_in.notification_channel,
+        notification_emails=site_in.notification_emails,
+    )
+    db.add(site)
+    db.flush()
+
+    if site_in.credentials:
+        cred = site_in.credentials
+        db_cred = SiteCredential(
+            site_id=site.id,
+            login_url=cred.login_url,
+            username_selector=cred.username_selector,
+            password_selector=cred.password_selector,
+            submit_selector=cred.submit_selector,
+            success_indicator=cred.success_indicator,
+            encrypted_username=encrypt_credential(cred.username),
+            encrypted_password=encrypt_credential(cred.password),
+        )
+        db.add(db_cred)
+
+    for page in site_in.pages:
+        db_page = SitePage(
+            site_id=site.id,
+            page_url=page.page_url,
+            page_name=page.page_name,
+            expected_element=page.expected_element,
+            expected_text=page.expected_text,
+            sort_order=page.sort_order,
+        )
+        db.add(db_page)
+
+    db.commit()
+    db.refresh(site)
+    return site
+
+
+@router.put("/{site_id}", response_model=SiteResponse)
+def update_site(
+    site_id: int,
+    site_in: SiteUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    for field, value in site_in.model_dump(exclude_unset=True).items():
+        setattr(site, field, value)
+
+    db.commit()
+    db.refresh(site)
+    return site
+
+
+@router.delete("/{site_id}", status_code=204)
+def delete_site(
+    site_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    db.delete(site)
+    db.commit()
