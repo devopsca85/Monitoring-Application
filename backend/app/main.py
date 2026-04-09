@@ -49,7 +49,17 @@ app.include_router(monitoring.router, prefix=settings.API_V1_PREFIX)
 async def startup():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
-    logger.info("Application started")
+
+    from app.services.scheduler_service import start_scheduler
+    start_scheduler()
+
+    logger.info("Application started with background scheduler")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    from app.services.scheduler_service import stop_scheduler
+    stop_scheduler()
 
 
 @app.get("/health")

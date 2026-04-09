@@ -12,6 +12,7 @@ from app.models.schemas import (
 )
 from app.routes.auth import get_current_user
 from app.services.alert_service import evaluate_and_alert
+from app.services.scheduler_service import trigger_check_for_site
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -28,6 +29,18 @@ async def submit_result(
     db.refresh(result)
 
     await evaluate_and_alert(db, result)
+    return result
+
+
+@router.post("/trigger/{site_id}")
+async def trigger_check(
+    site_id: int,
+    user: User = Depends(get_current_user),
+):
+    """Manually trigger a monitoring check for a site."""
+    result = await trigger_check_for_site(site_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     return result
 
 

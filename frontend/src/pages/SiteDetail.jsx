@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getSite, getResults } from '../services/api';
+import { getSite, getResults, triggerCheck } from '../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -9,11 +9,32 @@ export default function SiteDetail() {
   const { id } = useParams();
   const [site, setSite] = useState(null);
   const [results, setResults] = useState([]);
+  const [checking, setChecking] = useState(false);
+  const [checkMsg, setCheckMsg] = useState('');
 
-  useEffect(() => {
+  const loadData = () => {
     getSite(id).then((r) => setSite(r.data)).catch(() => {});
     getResults(id, 100).then((r) => setResults(r.data.reverse())).catch(() => {});
-  }, [id]);
+  };
+
+  useEffect(() => { loadData(); }, [id]);
+
+  const handleRunCheck = async () => {
+    setChecking(true);
+    setCheckMsg('');
+    try {
+      await triggerCheck(id);
+      setCheckMsg('Check completed! Refreshing...');
+      setTimeout(() => {
+        loadData();
+        setCheckMsg('');
+      }, 1500);
+    } catch (err) {
+      setCheckMsg(err.response?.data?.detail || 'Check failed — is the monitoring engine running?');
+    } finally {
+      setChecking(false);
+    }
+  };
 
   if (!site) return <div>Loading...</div>;
 
@@ -30,10 +51,22 @@ export default function SiteDetail() {
           <Link to="/sites" style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>&larr; Back to Sites</Link>
           <h2 style={{ marginTop: '4px' }}>{site.name}</h2>
         </div>
-        <span className={`badge badge-${site.is_active ? 'ok' : 'warning'}`} style={{ fontSize: '14px', padding: '6px 16px' }}>
-          {site.is_active ? 'Active' : 'Paused'}
-        </span>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button onClick={handleRunCheck} disabled={checking} className="btn btn-primary" style={{ fontSize: '14px' }}>
+            {checking ? 'Running...' : 'Run Check Now'}
+          </button>
+          <Link to={`/sites/${id}/edit`} className="btn btn-outline" style={{ fontSize: '14px' }}>Edit</Link>
+          <span className={`badge badge-${site.is_active ? 'ok' : 'warning'}`} style={{ fontSize: '14px', padding: '6px 16px' }}>
+            {site.is_active ? 'Active' : 'Paused'}
+          </span>
+        </div>
       </div>
+
+      {checkMsg && (
+        <div className={`error-message`} style={{ background: checkMsg.includes('completed') ? '#f0fff4' : undefined, color: checkMsg.includes('completed') ? 'var(--color-status-ok)' : undefined, marginBottom: '16px' }}>
+          {checkMsg}
+        </div>
+      )}
 
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <div className="stat-card info">
