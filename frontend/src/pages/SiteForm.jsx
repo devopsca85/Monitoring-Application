@@ -161,7 +161,7 @@ export default function SiteForm() {
               <select value={form.notification_channel} onChange={(e) => setForm({ ...form, notification_channel: e.target.value })}>
                 <option value="email">Email</option>
                 <option value="teams">Teams</option>
-                <option value="both">Both</option>
+                <option value="both">MS Teams & Email</option>
               </select>
             </div>
             <div className="form-group">

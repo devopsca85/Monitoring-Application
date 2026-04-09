@@ -92,7 +92,7 @@ export default function SiteDetail() {
           <div className="stat-label">Interval</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value" style={{ fontSize: '14px' }}>{site.notification_channel}</div>
+          <div className="stat-value" style={{ fontSize: '14px' }}>{{ email: 'Email', teams: 'MS Teams', both: 'MS Teams & Email' }[site.notification_channel] || site.notification_channel}</div>
           <div className="stat-label">Notifications</div>
         </div>
       </div>

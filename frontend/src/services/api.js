@@ -47,6 +47,7 @@ export const getResults = (siteId, limit = 50) =>
 export const getAlerts = (resolved = false) =>
   api.get(`/monitoring/alerts?resolved=${resolved}`);
 export const resolveAlert = (id) => api.post(`/monitoring/alerts/${id}/resolve`);
+export const getAlertHistory = (limit = 50) => api.get(`/monitoring/alert-history?limit=${limit}`);
 export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`);
 export const getSitesStatus = () => api.get('/monitoring/sites-status');
 

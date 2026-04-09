@@ -149,6 +149,19 @@ class AlertResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AlertDetailResponse(BaseModel):
+    id: int
+    site_id: int
+    site_name: str
+    site_url: str
+    alert_type: AlertStatus
+    message: str | None
+    notified: bool
+    resolved: bool
+    created_at: datetime | None
+    resolved_at: datetime | None
+
+
 # --- Dashboard ---
 class DashboardStats(BaseModel):
     total_sites: int

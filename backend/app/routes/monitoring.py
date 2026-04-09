@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.models import Alert, AlertStatus, MonitoringResult, Site, User
 from app.models.schemas import (
+    AlertDetailResponse,
     AlertResponse,
     DashboardStats,
     MonitoringResultCreate,
@@ -68,6 +69,40 @@ def get_alerts(
 ):
     query = db.query(Alert).filter(Alert.resolved == resolved)
     return query.order_by(Alert.created_at.desc()).limit(100).all()
+
+
+@router.get("/alert-history", response_model=list[AlertDetailResponse])
+def get_alert_history(
+    limit: int = Query(default=50, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """All alerts (active + resolved) with site name, ordered by newest first."""
+    alerts = (
+        db.query(Alert)
+        .order_by(Alert.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    site_ids = {a.site_id for a in alerts}
+    sites = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()}
+
+    result = []
+    for a in alerts:
+        s = sites.get(a.site_id)
+        result.append(AlertDetailResponse(
+            id=a.id,
+            site_id=a.site_id,
+            site_name=s.name if s else f"Site #{a.site_id}",
+            site_url=s.url if s else "",
+            alert_type=a.alert_type,
+            message=a.message,
+            notified=a.notified,
+            resolved=a.resolved,
+            created_at=a.created_at,
+            resolved_at=a.resolved_at,
+        ))
+    return result
 
 
 @router.post("/alerts/{alert_id}/resolve", response_model=AlertResponse)

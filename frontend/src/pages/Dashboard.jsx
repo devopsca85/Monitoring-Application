@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { getDashboardStats, getAlerts, getSitesStatus } from '../services/api';
+import { getDashboardStats, getAlerts, getSitesStatus, getAlertHistory } from '../services/api';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
@@ -83,22 +83,147 @@ function NextCheckTimer({ lastCheckedAt, intervalMinutes, isActive }) {
   );
 }
 
+function formatCST(dateStr) {
+  if (!dateStr) return '-';
+  return new Date(dateStr).toLocaleString('en-US', {
+    timeZone: 'America/Chicago',
+    month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: true,
+  }) + ' CST';
+}
+
+function ToastContainer({ toasts, onDismiss }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 70, right: 24, zIndex: 9999,
+      display: 'flex', flexDirection: 'column', gap: '10px',
+      maxWidth: '420px', pointerEvents: 'none',
+    }}>
+      {toasts.map((t) => (
+        <div key={t.id} style={{
+          pointerEvents: 'auto',
+          background: t.type === 'critical' ? '#fff5f5' : t.type === 'ok' ? '#f0fff4' : '#fffaf0',
+          border: `1px solid ${t.type === 'critical' ? '#feb2b2' : t.type === 'ok' ? '#9ae6b4' : '#fbd38d'}`,
+          borderLeft: `4px solid ${t.type === 'critical' ? '#e53e3e' : t.type === 'ok' ? '#38a169' : '#dd6b20'}`,
+          borderRadius: '8px',
+          padding: '14px 18px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          animation: 'slideInRight 0.3s ease-out',
+          display: 'flex', gap: '12px', alignItems: 'flex-start',
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px',
+            background: t.type === 'critical' ? '#e53e3e' : t.type === 'ok' ? '#38a169' : '#dd6b20',
+            color: 'white', fontWeight: 700,
+          }}>
+            {t.type === 'critical' ? '!' : t.type === 'ok' ? '\u2713' : '\u26A0'}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text)', marginBottom: '2px' }}>
+              {t.title}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t.message}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+              {formatCST(new Date().toISOString())}
+            </div>
+          </div>
+          <button onClick={() => onDismiss(t.id)} style={{
+            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)',
+            fontSize: '18px', lineHeight: 1, padding: '0 2px', flexShrink: 0,
+          }}>&times;</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [sitesStatus, setSitesStatus] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [alertHistory, setAlertHistory] = useState([]);
+  const [toasts, setToasts] = useState([]);
   const [refreshIn, setRefreshIn] = useState(15);
   const nextRefreshAt = useRef(Date.now() + 15000);
+  const knownAlertIds = useRef(new Set());
+  const isFirstLoad = useRef(true);
+
+  const addToast = (title, message, type = 'critical') => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, title, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 8000);
+  };
+
+  const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
   const loadData = () => {
     Promise.all([
       getDashboardStats().then((r) => setStats(r.data)).catch(() => {}),
       getSitesStatus().then((r) => setSitesStatus(r.data)).catch(() => {}),
-      getAlerts().then((r) => setAlerts(r.data)).catch(() => {}),
+      getAlerts().then((r) => {
+        const newAlerts = r.data;
+        setAlerts(newAlerts);
+
+        // Detect NEW alerts since last refresh
+        if (!isFirstLoad.current) {
+          for (const a of newAlerts) {
+            if (!knownAlertIds.current.has(a.id)) {
+              // Find site name from sitesStatus
+              const site = sitesStatus.find((s) => s.id === a.site_id);
+              const siteName = site ? site.name : `Site #${a.site_id}`;
+              addToast(
+                `Alert: ${siteName}`,
+                a.message || 'Monitoring alert triggered',
+                a.alert_type || 'critical',
+              );
+            }
+          }
+        }
+        knownAlertIds.current = new Set(newAlerts.map((a) => a.id));
+        isFirstLoad.current = false;
+      }).catch(() => {}),
+      getAlertHistory(30).then((r) => {
+        const history = r.data;
+        setAlertHistory(history);
+
+        // Also detect resolved alerts (recovery)
+        if (!isFirstLoad.current) {
+          for (const a of history) {
+            if (a.resolved && !knownAlertIds.current.has(`resolved-${a.id}`)) {
+              // Check if this was recently resolved (within last 30 seconds)
+              if (a.resolved_at) {
+                const resolvedTime = new Date(a.resolved_at).getTime();
+                if (Date.now() - resolvedTime < 30000) {
+                  addToast(
+                    `Recovered: ${a.site_name}`,
+                    `${a.site_name} is back online`,
+                    'ok',
+                  );
+                  knownAlertIds.current.add(`resolved-${a.id}`);
+                }
+              }
+            }
+          }
+        }
+      }).catch(() => {}),
     ]);
     nextRefreshAt.current = Date.now() + 15000;
     setRefreshIn(15);
   };
+
+  // Also detect site status changes from sitesStatus
+  useEffect(() => {
+    if (isFirstLoad.current) return;
+    for (const site of sitesStatus) {
+      if (site.last_status === 'critical' || site.last_status === 'warning') {
+        // These are handled by the alerts flow above
+      }
+    }
+  }, [sitesStatus]);
 
   // Single 1-second tick that handles both countdown and data refresh
   useEffect(() => {
@@ -124,6 +249,7 @@ export default function Dashboard() {
 
   return (
     <div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <div className="page-header">
         <h2>Dashboard</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -194,7 +320,7 @@ export default function Dashboard() {
         {/* Active Alerts */}
         <div className="card">
           <div className="card-header">
-            <h3>Active Alerts</h3>
+            <h3>Active Alerts ({alerts.length})</h3>
             <Link to="/alerts" className="btn btn-outline" style={{ fontSize: '13px', padding: '6px 14px' }}>View All</Link>
           </div>
           <div className="table-container">
@@ -216,6 +342,56 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* Alert History — with site names and CST times */}
+      <div className="card" style={{ marginTop: '20px' }}>
+        <div className="card-header">
+          <h3>Alert History</h3>
+          <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Times shown in CST</span>
+        </div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Severity</th>
+                <th>Message</th>
+                <th>Alert Sent (CST)</th>
+                <th>Resolved (CST)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alertHistory.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name}</Link>
+                    <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{a.site_url}</div>
+                  </td>
+                  <td><span className={`badge badge-${a.alert_type}`}>{a.alert_type}</span></td>
+                  <td style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px' }}>{a.message || '-'}</td>
+                  <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {formatCST(a.created_at)}
+                  </td>
+                  <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {a.resolved ? formatCST(a.resolved_at) : '-'}
+                  </td>
+                  <td>
+                    {a.resolved ? (
+                      <span className="badge badge-ok">Resolved</span>
+                    ) : (
+                      <span className="badge badge-critical">Active</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {alertHistory.length === 0 && (
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>No alerts sent yet</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
