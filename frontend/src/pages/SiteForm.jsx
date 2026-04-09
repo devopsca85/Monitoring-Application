@@ -22,6 +22,7 @@ export default function SiteForm() {
     password_selector: '#password',
     submit_selector: "button[type='submit']",
     success_indicator: '',
+    expected_page: 'mainpage.aspx',
     username: '',
     password: '',
   });
@@ -59,6 +60,7 @@ export default function SiteForm() {
             password_selector: credRes.data.password_selector || '#password',
             submit_selector: credRes.data.submit_selector || "button[type='submit']",
             success_indicator: credRes.data.success_indicator || '',
+            expected_page: credRes.data.expected_page || 'mainpage.aspx',
             username: '',
             password: '',
           });
@@ -186,14 +188,27 @@ export default function SiteForm() {
                 Leave username and password blank to keep the existing values.
               </p>
             )}
+            <div className="form-group">
+              <label>Login URL</label>
+              <input value={credentials.login_url} onChange={(e) => setCredentials({ ...credentials, login_url: e.target.value })} placeholder="https://example.com/login" />
+              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', display: 'block' }}>
+                For SSO sites, use the backdoor/direct login URL. After login, the system verifies <strong>mainpage.aspx</strong> loads.
+              </span>
+            </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Login URL</label>
-                <input value={credentials.login_url} onChange={(e) => setCredentials({ ...credentials, login_url: e.target.value })} placeholder="https://example.com/login" />
+                <label>Success Indicator (CSS Selector) <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: 'normal' }}>— optional</span></label>
+                <input value={credentials.success_indicator} onChange={(e) => setCredentials({ ...credentials, success_indicator: e.target.value })} placeholder="e.g. TabContainer1_tbTraining or #dashboard" />
+                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', display: 'block' }}>
+                  If left empty, the system checks that <strong>mainpage.aspx</strong> opens after login.
+                </span>
               </div>
               <div className="form-group">
-                <label>Success Indicator (CSS Selector)</label>
-                <input value={credentials.success_indicator} onChange={(e) => setCredentials({ ...credentials, success_indicator: e.target.value })} placeholder=".dashboard, #welcome" />
+                <label>Expected Post-Login Page <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: 'normal' }}>— optional</span></label>
+                <input value={credentials.expected_page || ''} onChange={(e) => setCredentials({ ...credentials, expected_page: e.target.value })} placeholder="mainpage.aspx (default)" />
+                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', display: 'block' }}>
+                  Page that should appear in the URL after successful login.
+                </span>
               </div>
             </div>
             <div className="form-row">

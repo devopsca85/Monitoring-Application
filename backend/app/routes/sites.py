@@ -55,6 +55,7 @@ async def create_site(
             password_selector=cred.password_selector,
             submit_selector=cred.submit_selector,
             success_indicator=cred.success_indicator,
+            expected_page=cred.expected_page or "mainpage.aspx",
             encrypted_username=encrypt_credential(cred.username),
             encrypted_password=encrypt_credential(cred.password),
         )
@@ -124,6 +125,7 @@ def update_site(
             existing_cred.password_selector = cred.password_selector
             existing_cred.submit_selector = cred.submit_selector
             existing_cred.success_indicator = cred.success_indicator
+            existing_cred.expected_page = cred.expected_page or "mainpage.aspx"
             if cred.username:
                 existing_cred.encrypted_username = encrypt_credential(cred.username)
             if cred.password:
@@ -136,6 +138,7 @@ def update_site(
                 password_selector=cred.password_selector,
                 submit_selector=cred.submit_selector,
                 success_indicator=cred.success_indicator,
+                expected_page=cred.expected_page or "mainpage.aspx",
                 encrypted_username=encrypt_credential(cred.username),
                 encrypted_password=encrypt_credential(cred.password),
             )

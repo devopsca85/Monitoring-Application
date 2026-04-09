@@ -32,6 +32,7 @@ class SiteCredentialCreate(BaseModel):
     password_selector: str = "#password"
     submit_selector: str = "button[type='submit']"
     success_indicator: str = ""
+    expected_page: str = "mainpage.aspx"
     username: str
     password: str
 
@@ -62,6 +63,7 @@ class SiteCredentialResponse(BaseModel):
     password_selector: str | None
     submit_selector: str | None
     success_indicator: str | None
+    expected_page: str | None
     model_config = {"from_attributes": True}
 
 

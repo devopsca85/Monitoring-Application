@@ -42,7 +42,7 @@ async def run_uptime_check(site: dict) -> dict:
                     "status": "critical",
                     "response_time_ms": elapsed,
                     "status_code": status_code,
-                    "error_message": f"HTTP 404 Not Found",
+                    "error_message": "HTTP 404 Not Found",
                 }
 
             if status_code >= 400:
@@ -71,92 +71,76 @@ async def run_uptime_check(site: dict) -> dict:
 
 
 def _normalize_selector(indicator: str) -> list[str]:
-    """Generate a list of CSS selectors to try from user input.
-
-    Users may enter selectors in many formats:
-      - "#myId"                          -> already valid
-      - ".myClass"                       -> already valid
-      - "myId"                           -> try as #myId
-      - "myId.table.table-striped"       -> try as #myId.table.table-striped
-    """
     selectors = [indicator]
-
     if not indicator.startswith(("#", ".", "[", "*", ":")):
         selectors.insert(0, f"#{indicator}")
-
     if "." in indicator and not indicator.startswith(("#", ".")):
         parts = indicator.split(".", 1)
         selectors.insert(0, f"#{parts[0]}.{parts[1]}")
-
     return selectors
 
 
 async def _check_indicator_strict(page, indicator: str) -> bool:
-    """Check if a success indicator exists on the page using STRICT methods only.
-    Only returns True if the element is actually present and visible in the DOM.
-    Does NOT check raw HTML text (too many false positives on login pages).
-    """
+    """Check if a success indicator exists using DOM-only methods."""
     selectors = _normalize_selector(indicator)
 
-    # Strategy 1: Try all normalized CSS selectors — element must be visible
     for sel in selectors:
+        try:
+            el = await page.query_selector(sel)
+            if el:
+                logger.info(f"Indicator found: '{sel}'")
+                return True
+        except Exception:
+            pass
+
+    raw_id = indicator.split(".")[0].lstrip("#")
+    if raw_id:
+        for query in [f'[id="{raw_id}"]', f'[id*="{raw_id}"]']:
+            try:
+                el = await page.query_selector(query)
+                if el:
+                    logger.info(f"Indicator found by id: '{query}'")
+                    return True
+            except Exception:
+                pass
+
+    return False
+
+
+async def _detect_login_failure(page, pre_login_url: str) -> str | None:
+    """Detect if login failed. Returns error message or None if login looks OK."""
+    current_url = page.url
+    logger.info(f"Login failure detection: pre_url={pre_login_url}, post_url={current_url}")
+
+    # --- Check A: Is a password field still visible? (strongest signal) ---
+    password_selectors = [
+        "input[type='password']",
+        "input[type='Password']",
+        "#PASSWORD", "#password", "#Password",
+        "input[name='PASSWORD']", "input[name='password']",
+        "input[name='pwd']", "input[name='pass']",
+    ]
+    for sel in password_selectors:
         try:
             el = await page.query_selector(sel)
             if el:
                 visible = await el.is_visible()
                 if visible:
-                    logger.info(f"Indicator found (visible): '{sel}'")
-                    return True
+                    logger.info(f"Login failure: password field '{sel}' still visible")
+                    return "Login failed — password field still visible (wrong credentials?)"
         except Exception:
             pass
 
-    # Strategy 2: Try all selectors — element exists in DOM (may be hidden)
-    for sel in selectors:
-        try:
-            el = await page.query_selector(sel)
-            if el:
-                logger.info(f"Indicator found (in DOM): '{sel}'")
-                return True
-        except Exception:
-            pass
-
-    # Strategy 3: Search by ID attribute directly
-    raw_id = indicator.split(".")[0].lstrip("#")
-    if raw_id:
-        try:
-            el = await page.query_selector(f'[id="{raw_id}"]')
-            if el:
-                logger.info(f"Indicator found by id attr: '{raw_id}'")
-                return True
-        except Exception:
-            pass
-        # Partial ID match
-        try:
-            el = await page.query_selector(f'[id*="{raw_id}"]')
-            if el:
-                logger.info(f"Indicator found by partial id: '{raw_id}'")
-                return True
-        except Exception:
-            pass
-
-    return False
-
-
-async def _detect_login_failure(page, pre_login_url: str, pre_login_html: str) -> str | None:
-    """Detect common signs that a login has failed.
-    Returns an error message if failure detected, None otherwise.
-    """
-    current_url = page.url
-
-    # Check 1: Look for visible error messages on the page
+    # --- Check B: Look for error messages on the page ---
     error_selectors = [
         ".error", ".alert-danger", ".alert-error", ".login-error",
         ".validation-summary-errors", ".field-validation-error",
         "#errorMessage", "#error", ".text-danger", ".text-error",
-        "[role='alert']", ".invalid-feedback", ".login-failed",
+        "[role='alert']", ".invalid-feedback",
         "#lblError", "#lblMessage", "#ErrorLabel",
         "span[style*='color:Red']", "span[style*='color: red']",
-        "span[style*='color:red']",
+        "span[style*='color:red']", "span[style*='color:#']",
+        ".error-message", "#ctl00_ContentPlaceHolder1_lblError",
     ]
     for sel in error_selectors:
         try:
@@ -166,11 +150,12 @@ async def _detect_login_failure(page, pre_login_url: str, pre_login_html: str) -
                 if visible:
                     text = (await el.inner_text()).strip()
                     if text:
-                        return f"Login failed — error on page: {text[:200]}"
+                        logger.info(f"Login failure: error element '{sel}' = '{text[:100]}'")
+                        return f"Login failed — {text[:200]}"
         except Exception:
             pass
 
-    # Check 2: Check page text for error keywords
+    # --- Check C: Look for error keywords in page body ---
     try:
         body_text = await page.inner_text("body")
         error_phrases = [
@@ -178,48 +163,39 @@ async def _detect_login_failure(page, pre_login_url: str, pre_login_html: str) -
             "incorrect password", "incorrect user", "login failed",
             "wrong password", "authentication failed", "access denied",
             "try again", "not recognized", "account locked",
-            "user id or password", "invalid logon",
+            "user id or password", "invalid logon", "login unsuccessful",
+            "unable to log", "bad credentials", "logon failed",
         ]
         lower_text = body_text.lower()
         for phrase in error_phrases:
             if phrase in lower_text:
+                logger.info(f"Login failure: page contains '{phrase}'")
                 return f"Login failed — page contains: '{phrase}'"
     except Exception:
         pass
 
-    # Check 3: Check if the login form is still present (meaning login didn't succeed)
-    login_form_selectors = [
-        "input[type='password']",
-        "#PASSWORD", "#password",
-        "input[name='PASSWORD']", "input[name='password']",
+    # --- Check D: Look for login form still present ---
+    login_form_indicators = [
+        "form[name='frmLogon']", "form[id='frmLogon']",
+        "form[action*='login']", "form[action*='Login']",
+        "form[action*='logon']", "form[action*='Logon']",
+        "form[action*='signin']",
     ]
-    for sel in login_form_selectors:
+    for sel in login_form_indicators:
         try:
             el = await page.query_selector(sel)
             if el:
-                visible = await el.is_visible()
-                if visible:
-                    # Password field is still visible → login form is still showing
-                    return "Login failed — login form still visible after submit"
+                # Form exists — but also check if password field is in it
+                pwd = await el.query_selector("input[type='password']")
+                if pwd:
+                    visible = await pwd.is_visible()
+                    if visible:
+                        logger.info(f"Login failure: login form '{sel}' with password field still present")
+                        return "Login failed — login form still displayed after submit"
         except Exception:
             pass
 
-    # Check 4: If URL didn't change AND page content didn't change significantly
-    if current_url.rstrip("/") == pre_login_url.rstrip("/"):
-        try:
-            current_html = await page.content()
-            # If the HTML is very similar to pre-login, the page didn't change
-            # (ASP.NET forms post back to same URL)
-            pre_len = len(pre_login_html)
-            cur_len = len(current_html)
-            # If the page size is within 20% and contains the same form, it's still the login page
-            if pre_len > 0 and abs(cur_len - pre_len) / pre_len < 0.2:
-                # Double-check: is the login form name/id still in the page?
-                if 'name="frmLogon"' in current_html or 'id="frmLogon"' in current_html:
-                    return "Login failed — still on login page (page unchanged after submit)"
-        except Exception:
-            pass
-
+    logger.info("Login failure detection: no failure signs detected")
     return None
 
 
@@ -230,13 +206,23 @@ async def run_login_check(
     start = time.time()
     page_results = []
 
+    # Validate credentials exist
+    if not credentials or not credentials.get("login_url"):
+        return {
+            "status": "critical",
+            "response_time_ms": 0,
+            "status_code": 0,
+            "error_message": "Login check failed — no login URL or credentials configured",
+        }
+
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
             bpage = await context.new_page()
 
-            login_url = credentials.get("login_url", "")
+            login_url = credentials["login_url"]
+            logger.info(f"Login check starting: {login_url}")
 
             # Navigate to login page
             await bpage.goto(
@@ -244,51 +230,46 @@ async def run_login_check(
                 timeout=settings.BROWSER_TIMEOUT_MS,
                 wait_until="domcontentloaded",
             )
+            await bpage.wait_for_load_state("networkidle", timeout=10000)
 
             # Fill credentials
-            await bpage.fill(
-                credentials["username_selector"], credentials["username"]
-            )
-            await bpage.fill(
-                credentials["password_selector"], credentials["password"]
-            )
-
-            # Capture state before submit for comparison
-            pre_login_url = bpage.url
-            pre_login_html = await bpage.content()
-
-            # Submit and wait for navigation/response
-            indicator = (credentials.get("success_indicator") or "").strip()
+            username_sel = credentials.get("username_selector", "#username")
+            password_sel = credentials.get("password_selector", "#password")
             submit_sel = credentials.get("submit_selector", "input[type='submit']")
 
-            # Use multiple submit strategies for compatibility
-            # (ASP.NET WebForms, SPAs, standard forms)
-            try:
-                # Strategy A: Click and wait for navigation (works for server-side forms)
-                async with bpage.expect_navigation(
-                    timeout=15000, wait_until="load"
-                ):
-                    await bpage.click(submit_sel)
-            except Exception:
-                try:
-                    # Strategy B: Maybe it already navigated or is a SPA
-                    await bpage.wait_for_load_state("domcontentloaded", timeout=5000)
-                except Exception:
-                    pass
+            logger.info(f"Filling: user='{username_sel}', pass='{password_sel}', submit='{submit_sel}'")
 
-            # Wait for page to fully stabilize (redirects, JS rendering, frames)
+            await bpage.fill(username_sel, credentials.get("username", ""))
+            await bpage.fill(password_sel, credentials.get("password", ""))
+
+            # Capture pre-login URL
+            pre_login_url = bpage.url
+            logger.info(f"Pre-login URL: {pre_login_url}")
+
+            # Submit — wait for full page load (handles ASP.NET postback + redirect)
+            try:
+                async with bpage.expect_navigation(timeout=20000, wait_until="load"):
+                    await bpage.click(submit_sel)
+                logger.info(f"Navigation completed after submit")
+            except Exception as e:
+                logger.info(f"No navigation after submit (SPA?): {e}")
+
+            # Wait for everything to settle
             try:
                 await bpage.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
                 pass
             await bpage.wait_for_timeout(5000)
 
-            # === STEP 1: Detect obvious login failures ===
-            failure_msg = await _detect_login_failure(bpage, pre_login_url, pre_login_html)
+            post_login_url = bpage.url
+            logger.info(f"Post-login URL: {post_login_url}")
 
-            # === STEP 2: If login failure was detected, report immediately ===
+            # === STEP 1: Detect login failure ===
+            failure_msg = await _detect_login_failure(bpage, pre_login_url)
+
             if failure_msg:
                 elapsed = (time.time() - start) * 1000
+                logger.warning(f"Login FAILED for {site['url']}: {failure_msg}")
                 await browser.close()
                 return {
                     "status": "critical",
@@ -297,29 +278,40 @@ async def run_login_check(
                     "error_message": failure_msg,
                 }
 
-            # === STEP 3: Verify success indicator (if set) ===
-            if indicator:
-                found = await _check_indicator_strict(bpage, indicator)
-                if not found:
-                    # Wait more and retry once
-                    await bpage.wait_for_timeout(5000)
+            # === STEP 2: Check expected post-login page ===
+            expected_page = (credentials.get("expected_page") or "mainpage.aspx").strip()
+            indicator = (credentials.get("success_indicator") or "").strip()
+            lower_url = bpage.url.lower()
+
+            # Primary check: did we land on the expected page?
+            on_expected_page = expected_page.lower() in lower_url
+            logger.info(
+                f"Expected page '{expected_page}' in URL '{bpage.url}': {on_expected_page}"
+            )
+
+            if on_expected_page:
+                # We're on the right page — login succeeded
+                # Optionally verify the CSS indicator too
+                if indicator:
                     found = await _check_indicator_strict(bpage, indicator)
-
-                if not found:
-                    # Fallback: check if we landed on a known post-login page
-                    # (e.g. mainpage.aspx, default.aspx, home, dashboard)
-                    current_url = bpage.url.lower()
-                    post_login_pages = [
-                        "mainpage.aspx", "default.aspx", "home", "dashboard",
-                        "index.aspx", "main.aspx", "portal", "welcome",
-                    ]
-                    landed_on_app = any(pg in current_url for pg in post_login_pages)
-
-                    if landed_on_app:
-                        logger.info(
-                            f"Indicator '{indicator}' not found but landed on "
-                            f"post-login page: {bpage.url} — treating as OK"
+                    if not found:
+                        await bpage.wait_for_timeout(5000)
+                        found = await _check_indicator_strict(bpage, indicator)
+                    if not found:
+                        logger.warning(
+                            f"On expected page but indicator '{indicator}' not found — still OK"
                         )
+                logger.info(f"Login SUCCESS for {site['url']}, landed on: {bpage.url}")
+            else:
+                # Not on expected page — try indicator as fallback
+                if indicator:
+                    found = await _check_indicator_strict(bpage, indicator)
+                    if not found:
+                        await bpage.wait_for_timeout(5000)
+                        found = await _check_indicator_strict(bpage, indicator)
+
+                    if found:
+                        logger.info(f"Login SUCCESS for {site['url']} (indicator found)")
                     else:
                         elapsed = (time.time() - start) * 1000
                         await browser.close()
@@ -328,12 +320,26 @@ async def run_login_check(
                             "response_time_ms": elapsed,
                             "status_code": 200,
                             "error_message": (
-                                f"Login completed but success indicator '{indicator}' "
-                                f"not found. Current page: {bpage.url}"
+                                f"Login failed — expected '{expected_page}' in URL "
+                                f"but got: {bpage.url}. "
+                                f"Indicator '{indicator}' also not found."
                             ),
                         }
+                else:
+                    # No indicator, not on expected page
+                    elapsed = (time.time() - start) * 1000
+                    await browser.close()
+                    return {
+                        "status": "critical",
+                        "response_time_ms": elapsed,
+                        "status_code": 200,
+                        "error_message": (
+                            f"Login failed — expected '{expected_page}' in URL "
+                            f"but got: {bpage.url}"
+                        ),
+                    }
 
-            # === STEP 4: Validate subpages (if configured) ===
+            # === STEP 3: Validate subpages (if configured) ===
             overall_status = "ok"
             if pages:
                 for pg in sorted(pages, key=lambda x: x.get("sort_order", 0)):
@@ -396,7 +402,7 @@ async def run_login_check(
             }
     except Exception as e:
         elapsed = (time.time() - start) * 1000
-        logger.error(f"Login check failed for {site['url']}: {e}")
+        logger.error(f"Login check exception for {site['url']}: {e}")
         return {
             "status": "critical",
             "response_time_ms": elapsed,
@@ -427,16 +433,20 @@ async def run_multi_page_check(
                     wait_until="domcontentloaded",
                 )
                 await bpage.fill(
-                    credentials["username_selector"], credentials["username"]
+                    credentials.get("username_selector", "#username"),
+                    credentials.get("username", ""),
                 )
                 await bpage.fill(
-                    credentials["password_selector"], credentials["password"]
+                    credentials.get("password_selector", "#password"),
+                    credentials.get("password", ""),
                 )
                 try:
                     async with bpage.expect_navigation(
-                        timeout=10000, wait_until="domcontentloaded"
+                        timeout=20000, wait_until="load"
                     ):
-                        await bpage.click(credentials["submit_selector"])
+                        await bpage.click(
+                            credentials.get("submit_selector", "input[type='submit']")
+                        )
                 except Exception:
                     pass
                 try:
@@ -449,7 +459,11 @@ async def run_multi_page_check(
             overall_status = "ok"
             for pg in sorted(pages, key=lambda x: x.get("sort_order", 0)):
                 pg_start = time.time()
-                pg_result = {"page_name": pg.get("page_name", pg["page_url"]), "status": "ok", "error": ""}
+                pg_result = {
+                    "page_name": pg.get("page_name", pg["page_url"]),
+                    "status": "ok",
+                    "error": "",
+                }
 
                 try:
                     await bpage.goto(
@@ -460,17 +474,23 @@ async def run_multi_page_check(
 
                     if pg.get("expected_element"):
                         try:
-                            await bpage.wait_for_selector(pg["expected_element"], timeout=10000)
+                            await bpage.wait_for_selector(
+                                pg["expected_element"], timeout=10000
+                            )
                         except Exception:
                             pg_result["status"] = "critical"
-                            pg_result["error"] = f"Element '{pg['expected_element']}' not found"
+                            pg_result["error"] = (
+                                f"Element '{pg['expected_element']}' not found"
+                            )
                             overall_status = "critical"
 
                     if pg.get("expected_text"):
                         content = await bpage.content()
                         if pg["expected_text"] not in content:
                             pg_result["status"] = "warning" if pg_result["status"] == "ok" else pg_result["status"]
-                            pg_result["error"] = f"Text '{pg['expected_text']}' not found"
+                            pg_result["error"] = (
+                                f"Text '{pg['expected_text']}' not found"
+                            )
                             if overall_status == "ok":
                                 overall_status = "warning"
 

@@ -34,6 +34,7 @@ def _build_job(site: Site, db) -> dict:
                 "password_selector": cred.password_selector,
                 "submit_selector": cred.submit_selector,
                 "success_indicator": cred.success_indicator or "",
+                "expected_page": cred.expected_page or "mainpage.aspx",
                 "username": decrypt_credential(cred.encrypted_username),
                 "password": decrypt_credential(cred.encrypted_password),
             }

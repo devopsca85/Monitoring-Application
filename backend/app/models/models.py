@@ -80,6 +80,7 @@ class SiteCredential(Base):
     password_selector = Column(String(255))
     submit_selector = Column(String(255))
     success_indicator = Column(String(255))  # CSS selector or text to verify login
+    expected_page = Column(String(255), default="mainpage.aspx")  # URL fragment expected after login
     encrypted_username = Column(Text)
     encrypted_password = Column(Text)
 
