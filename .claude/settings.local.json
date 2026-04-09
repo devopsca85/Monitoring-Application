@@ -3,7 +3,10 @@
     "allow": [
       "WebFetch(domain:www.fldata.com)",
       "Bash(curl -s https://www.fldata.com)",
-      "Bash(curl -sL https://www.fldata.com)"
+      "Bash(curl -sL https://www.fldata.com)",
+      "WebFetch(domain:ehsqa4.fldata.com)",
+      "Bash(curl -sL --max-time 15 \"https://ehsqa4.fldata.com\")",
+      "Bash(curl -sLk --max-time 15 \"https://ehsqa4.fldata.com\")"
     ]
   }
 }
