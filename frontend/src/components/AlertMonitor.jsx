@@ -35,25 +35,29 @@ export default function AlertMonitor() {
         const previousIds = knownAlertIds.current;
 
         if (previousIds === null) {
-          // FIRST LOAD — if alerts already exist, fire alarm immediately
-          if (alerts.length > 0) {
-            console.log(`AlertMonitor: ${alerts.length} active alerts on load — starting alarm`);
+          // FIRST LOAD
+          const criticals = alerts.filter((a) => a.alert_type === 'critical' || !a.alert_type);
+          if (criticals.length > 0) {
+            console.log(`AlertMonitor: ${criticals.length} critical alerts on load`);
             playAlarmBeep();
             setAlarmAcknowledged(false);
-            for (const a of alerts) {
-              const name = a.site_name || `Site #${a.site_id}`;
-              addToast(`Alert: ${name}`, a.message || 'Site is down', a.alert_type || 'critical');
-            }
+          }
+          for (const a of alerts) {
+            const name = a.site_name || `Site #${a.site_id}`;
+            addToast(`Alert: ${name}`, a.message || 'Site is down', a.alert_type || 'critical');
           }
         } else {
           // SUBSEQUENT LOADS — detect new alerts
           for (const a of alerts) {
             if (!previousIds.has(a.id)) {
               const name = a.site_name || `Site #${a.site_id}`;
-              console.log(`AlertMonitor: NEW alert — ${name}`);
+              console.log(`AlertMonitor: NEW alert — ${name} (${a.alert_type})`);
               addToast(`Alert: ${name}`, a.message || 'Monitoring alert triggered', a.alert_type || 'critical');
-              playAlarmBeep();
-              setAlarmAcknowledged(false);
+              // Sound alarm only for critical/down, not warnings
+              if (a.alert_type === 'critical' || !a.alert_type) {
+                playAlarmBeep();
+                setAlarmAcknowledged(false);
+              }
             }
           }
 
@@ -75,16 +79,18 @@ export default function AlertMonitor() {
     return () => clearInterval(id);
   }, [addToast]);
 
-  // Alarm loop control — start/stop based on active alerts
+  // Alarm loop control — sound only for CRITICAL alerts, not warnings
+  const criticalAlerts = activeAlerts.filter((a) => a.alert_type === 'critical' || !a.alert_type);
+
   useEffect(() => {
-    if (activeAlerts.length > 0 && !alarmAcknowledged) {
-      console.log('AlertMonitor: Starting alarm loop');
+    if (criticalAlerts.length > 0 && !alarmAcknowledged) {
+      console.log('AlertMonitor: Starting alarm loop (critical alerts)');
       startAlarmLoop();
     } else {
       stopAlarmLoop();
     }
     return () => stopAlarmLoop();
-  }, [activeAlerts, alarmAcknowledged]);
+  }, [criticalAlerts.length, alarmAcknowledged]);
 
   return (
     <>

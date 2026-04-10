@@ -26,14 +26,43 @@ function makeWavUrl() {
   return URL.createObjectURL(new Blob([buf], {type:'audio/wav'}));
 }
 
+let customAudioChecked = false;
+
 function getAudio() {
   if (!alarmAudio) {
-    alarmAudio = new Audio(makeWavUrl());
-    alarmAudio.volume = 0.8;
-    // Preload
-    alarmAudio.load();
+    // Try custom uploaded audio first
+    if (!customAudioChecked) {
+      customAudioChecked = true;
+      const custom = new Audio('/api/v1/admin/alarm-audio/file');
+      custom.volume = 0.8;
+      custom.addEventListener('canplaythrough', () => {
+        alarmAudio = custom;
+      }, { once: true });
+      custom.addEventListener('error', () => {
+        // No custom audio — use generated WAV
+        alarmAudio = new Audio(makeWavUrl());
+        alarmAudio.volume = 0.8;
+        alarmAudio.load();
+      }, { once: true });
+      custom.load();
+      // Return generated wav for now until custom loads
+      alarmAudio = new Audio(makeWavUrl());
+      alarmAudio.volume = 0.8;
+      alarmAudio.load();
+    } else {
+      alarmAudio = new Audio(makeWavUrl());
+      alarmAudio.volume = 0.8;
+      alarmAudio.load();
+    }
   }
   return alarmAudio;
+}
+
+// Force reload custom audio (call after upload)
+export function reloadAlarmAudio() {
+  alarmAudio = null;
+  customAudioChecked = false;
+  getAudio();
 }
 
 // Strategy 2: Web Audio API oscillator

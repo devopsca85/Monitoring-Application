@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getSystemSettings, updateSmtpSettings, updateTeamsSettings, testSmtp, testTeams, getSsoSettings, updateSsoSettings } from '../services/api';
+import { getSystemSettings, updateSmtpSettings, updateTeamsSettings, testSmtp, testTeams, getSsoSettings, updateSsoSettings, uploadAlarmAudio, deleteAlarmAudio, getAlarmAudioInfo } from '../services/api';
+import { playAlarmBeep, reloadAlarmAudio } from '../services/alarm';
 
 export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
@@ -16,6 +17,7 @@ export default function AdminSettings() {
     redirect_uri: '', admin_group_id: '', user_group_id: '',
   });
   const [ssoSecretSet, setSsoSecretSet] = useState(false);
+  const [alarmInfo, setAlarmInfo] = useState({ has_custom: false, filename: '' });
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   const showMsg = (text, type = 'success') => {
@@ -51,6 +53,10 @@ export default function AdminSettings() {
         });
         setSsoSecretSet(s.client_secret_set);
       })
+      .catch(() => {});
+
+    getAlarmAudioInfo()
+      .then((r) => setAlarmInfo(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -281,6 +287,70 @@ export default function AdminSettings() {
           <button type="submit" className="btn btn-primary">Save SSO Settings</button>
         </div>
       </form>
+
+      {/* Alarm Audio */}
+      <div className="card">
+        <div className="card-header">
+          <h3>Alarm Audio</h3>
+          <span className={`badge ${alarmInfo.has_custom ? 'badge-ok' : 'badge-warning'}`}>
+            {alarmInfo.has_custom ? 'Custom Audio' : 'Default Tone'}
+          </span>
+        </div>
+        <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+          Upload a custom alarm sound (mp3, wav, ogg — max 2MB). Plays on <strong>critical/down</strong> alerts only, not warnings.
+        </p>
+
+        {alarmInfo.has_custom && (
+          <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '20px' }}>&#128266;</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>{alarmInfo.filename}</div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Custom alarm audio active</div>
+            </div>
+            <button type="button" onClick={() => { playAlarmBeep(); }} className="btn btn-outline" style={{ padding: '4px 12px', fontSize: '12px' }}>
+              Test
+            </button>
+            <button type="button" onClick={async () => {
+              try {
+                await deleteAlarmAudio();
+                setAlarmInfo({ has_custom: false, filename: '' });
+                reloadAlarmAudio();
+                showMsg('Custom alarm deleted — using default tone');
+              } catch (err) { showMsg('Delete failed', 'error'); }
+            }} className="btn btn-danger" style={{ padding: '4px 12px', fontSize: '12px' }}>
+              Remove
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <label style={{
+            display: 'inline-flex', alignItems: 'center', gap: '8px',
+            padding: '10px 20px', borderRadius: '30px', cursor: 'pointer',
+            background: 'var(--color-primary)', color: 'white', fontSize: '13px', fontWeight: 500,
+          }}>
+            <input type="file" accept=".mp3,.wav,.ogg,.m4a" style={{ display: 'none' }} onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                await uploadAlarmAudio(file);
+                reloadAlarmAudio();
+                setAlarmInfo({ has_custom: true, filename: file.name });
+                showMsg('Alarm audio uploaded');
+              } catch (err) {
+                showMsg(err.response?.data?.detail || 'Upload failed', 'error');
+              }
+              e.target.value = '';
+            }} />
+            Upload Audio File
+          </label>
+          {!alarmInfo.has_custom && (
+            <button type="button" onClick={() => { playAlarmBeep(); }} className="btn btn-outline" style={{ fontSize: '13px' }}>
+              Test Default Tone
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Security Info */}
       <div className="card">

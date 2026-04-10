@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import shutil
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -300,3 +304,66 @@ def update_sso_settings(
     _set_setting(db, "sso_user_group_id", data.user_group_id)
     db.commit()
     return {"status": "Azure SSO settings saved"}
+
+
+# ===========================================================================
+# ALARM AUDIO
+# ===========================================================================
+ALARM_AUDIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "alarm_audio")
+
+
+@router.post("/alarm-audio")
+async def upload_alarm_audio(
+    file: UploadFile = File(...),
+    admin: User = Depends(require_admin),
+):
+    """Upload a custom alarm audio file (mp3, wav, ogg). Max 2MB."""
+    if file.size and file.size > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 2MB)")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".mp3", ".wav", ".ogg", ".m4a"):
+        raise HTTPException(status_code=400, detail="Only mp3, wav, ogg, m4a files are supported")
+
+    os.makedirs(ALARM_AUDIO_DIR, exist_ok=True)
+
+    # Remove old files
+    for f in os.listdir(ALARM_AUDIO_DIR):
+        os.remove(os.path.join(ALARM_AUDIO_DIR, f))
+
+    dest = os.path.join(ALARM_AUDIO_DIR, f"alarm{ext}")
+    with open(dest, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    return {"status": "Alarm audio uploaded", "filename": f"alarm{ext}"}
+
+
+@router.delete("/alarm-audio")
+def delete_alarm_audio(admin: User = Depends(require_admin)):
+    """Delete custom alarm audio — reverts to default generated tone."""
+    if os.path.exists(ALARM_AUDIO_DIR):
+        for f in os.listdir(ALARM_AUDIO_DIR):
+            os.remove(os.path.join(ALARM_AUDIO_DIR, f))
+    return {"status": "Alarm audio deleted — using default tone"}
+
+
+@router.get("/alarm-audio/info")
+def alarm_audio_info(admin: User = Depends(require_admin)):
+    """Check if custom alarm audio exists."""
+    if os.path.exists(ALARM_AUDIO_DIR):
+        files = os.listdir(ALARM_AUDIO_DIR)
+        if files:
+            return {"has_custom": True, "filename": files[0]}
+    return {"has_custom": False}
+
+
+# Public endpoint to serve the audio file (no auth — needed by browser Audio element)
+@router.get("/alarm-audio/file")
+def serve_alarm_audio():
+    """Serve the custom alarm audio file."""
+    if os.path.exists(ALARM_AUDIO_DIR):
+        files = os.listdir(ALARM_AUDIO_DIR)
+        if files:
+            path = os.path.join(ALARM_AUDIO_DIR, files[0])
+            return FileResponse(path, media_type="audio/mpeg")
+    raise HTTPException(status_code=404, detail="No custom alarm audio")

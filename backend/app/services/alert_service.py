@@ -10,8 +10,10 @@ logger = logging.getLogger(__name__)
 
 IMMEDIATE_ALERT_CODES = {404, 500, 501, 502, 503, 504}
 
-# Slowness: only alert if site has been slow for this many minutes
+# Slowness: sustained period before alerting
 SLOW_SUSTAINED_MINUTES = 15
+# Slowness: minimum hours between repeated slow alerts (per site)
+SLOW_COOLDOWN_HOURS = 3
 
 
 def _is_immediate_alert(result: MonitoringResult) -> bool:
@@ -20,36 +22,33 @@ def _is_immediate_alert(result: MonitoringResult) -> bool:
     return False
 
 
-def _is_sustained_slowness(db: Session, site: Site, slow_threshold: int) -> bool:
-    """Check if the site has been consistently slow for the past SLOW_SUSTAINED_MINUTES."""
+def _is_sustained_slowness(db: Session, site_id: int, threshold: int) -> bool:
+    """Check if site has been consistently slow for SLOW_SUSTAINED_MINUTES."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=SLOW_SUSTAINED_MINUTES)
-
     recent = (
         db.query(MonitoringResult)
-        .filter(
-            MonitoringResult.site_id == site.id,
-            MonitoringResult.checked_at >= cutoff,
-        )
+        .filter(MonitoringResult.site_id == site_id, MonitoringResult.checked_at >= cutoff)
         .order_by(MonitoringResult.checked_at.desc())
         .all()
     )
-
     if len(recent) < 2:
-        # Not enough data points yet — don't alert
-        logger.info(f"Slowness check for {site.name}: only {len(recent)} results in last {SLOW_SUSTAINED_MINUTES}m, skipping")
         return False
+    return all((r.response_time_ms or 0) > threshold for r in recent)
 
-    # Check if ALL results in the window are slow
-    all_slow = all(
-        (r.response_time_ms or 0) > slow_threshold
-        for r in recent
-    )
 
-    logger.info(
-        f"Slowness check for {site.name}: {len(recent)} results in last {SLOW_SUSTAINED_MINUTES}m, "
-        f"all slow={all_slow}, threshold={slow_threshold}ms"
+def _slow_alert_on_cooldown(db: Session, site_id: int) -> bool:
+    """Check if a slow alert was already sent in the last SLOW_COOLDOWN_HOURS."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=SLOW_COOLDOWN_HOURS)
+    recent_alert = (
+        db.query(Alert)
+        .filter(
+            Alert.site_id == site_id,
+            Alert.alert_type == AlertStatus.WARNING,
+            Alert.created_at >= cutoff,
+        )
+        .first()
     )
-    return all_slow
+    return recent_alert is not None
 
 
 async def _create_and_send_alert(
@@ -86,11 +85,7 @@ async def _create_and_send_alert(
         db.refresh(alert)
         logger.info(f"ALERT CREATED #{alert.id} for {site.name}: {status_str} — {message[:100]}")
 
-        to_emails = [
-            e.strip()
-            for e in (site.notification_emails or "").split(",")
-            if e.strip()
-        ]
+        to_emails = [e.strip() for e in (site.notification_emails or "").split(",") if e.strip()]
 
         try:
             await send_alert(
@@ -100,25 +95,112 @@ async def _create_and_send_alert(
                 status=status_str,
                 message=message,
             )
-            logger.info(f"Alert notification sent for {site.name}")
         except Exception as ne:
-            logger.error(f"Notification send failed for {site.name} (alert still created): {ne}")
+            logger.error(f"Notification failed for {site.name}: {ne}")
 
     except Exception as e:
         logger.error(f"ALERT CREATION FAILED for {site.name}: {e}", exc_info=True)
+
+
+async def _handle_slow_sites(db: Session) -> None:
+    """Check all sites for sustained slowness and send ONE consolidated alert."""
+    slow_sites = []
+
+    sites = db.query(Site).filter(Site.is_active == True).all()
+    for site in sites:
+        threshold = site.slow_threshold_ms or 10000
+
+        # Get latest result
+        latest = (
+            db.query(MonitoringResult)
+            .filter(MonitoringResult.site_id == site.id)
+            .order_by(MonitoringResult.checked_at.desc())
+            .first()
+        )
+        if not latest or latest.status != AlertStatus.OK:
+            continue
+
+        response_time = latest.response_time_ms or 0
+        if response_time <= threshold:
+            continue
+
+        # Site is currently slow — check if sustained
+        if not _is_sustained_slowness(db, site.id, threshold):
+            continue
+
+        # Check 3-hour cooldown
+        if _slow_alert_on_cooldown(db, site.id):
+            logger.info(f"Slow alert for {site.name} on cooldown (sent within last {SLOW_COOLDOWN_HOURS}h)")
+            continue
+
+        slow_sites.append({
+            "site": site,
+            "response_ms": int(response_time),
+            "threshold_ms": threshold,
+        })
+
+    if not slow_sites:
+        return
+
+    # Create individual alert records (for tracking)
+    for entry in slow_sites:
+        site = entry["site"]
+        msg = f"SLOW: {site.name} — {entry['response_ms']}ms (threshold: {entry['threshold_ms']}ms)"
+
+        alert = Alert(
+            site_id=site.id,
+            alert_type=AlertStatus.WARNING,
+            message=msg,
+            notified=True,
+            notified_at=datetime.now(timezone.utc),
+            resolved=False,
+        )
+        db.add(alert)
+
+    db.commit()
+
+    # Send ONE consolidated notification for all slow sites
+    site_lines = "\n".join(
+        f"- {e['site'].name} ({e['site'].url}): {e['response_ms']}ms (threshold: {e['threshold_ms']}ms)"
+        for e in slow_sites
+    )
+    consolidated_msg = (
+        f"{len(slow_sites)} site(s) experiencing sustained slowness "
+        f"(>{SLOW_SUSTAINED_MINUTES} min):\n{site_lines}"
+    )
+
+    html_lines = "".join(
+        f"<li><strong>{e['site'].name}</strong> — {e['response_ms']}ms (threshold: {e['threshold_ms']}ms)</li>"
+        for e in slow_sites
+    )
+    html_msg = f"<p>{len(slow_sites)} site(s) with sustained slowness:</p><ul>{html_lines}</ul>"
+
+    # Use first slow site's notification settings, or send to all admin emails
+    first_site = slow_sites[0]["site"]
+    to_emails = [e.strip() for e in (first_site.notification_emails or "").split(",") if e.strip()]
+
+    try:
+        await send_alert(
+            channel=first_site.notification_channel.value,
+            to_emails=to_emails,
+            site_name="Multiple Sites",
+            status="warning",
+            message=html_msg,
+        )
+        logger.info(f"Consolidated slow alert sent for {len(slow_sites)} sites")
+    except Exception as e:
+        logger.error(f"Failed to send consolidated slow alert: {e}")
 
 
 async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
     try:
         site = db.query(Site).filter(Site.id == result.site_id).first()
         if not site:
-            logger.warning(f"evaluate_and_alert: site {result.site_id} not found")
             return
 
         logger.info(
             f"evaluate_and_alert: site={site.name}, status={result.status.value}, "
-            f"code={result.status_code}, response={result.response_time_ms}ms, "
-            f"error={result.error_message or 'none'}"
+            f"code={result.status_code}, response={result.response_time_ms}ms"
         )
 
         if result.status == AlertStatus.OK:
@@ -126,28 +208,13 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
             response_time = result.response_time_ms or 0
 
             if response_time > slow_threshold:
-                # Site is slow — but only alert if sustained for 15+ minutes
-                if _is_sustained_slowness(db, site, slow_threshold):
-                    slow_msg = (
-                        f"SUSTAINED SLOWNESS: {site.name} ({site.url}) has been responding "
-                        f"above {slow_threshold}ms for the past {SLOW_SUSTAINED_MINUTES} minutes. "
-                        f"Latest: {int(response_time)}ms"
-                    )
-                    logger.warning(f"Sustained slowness alert for {site.name}")
-
-                    result.status = AlertStatus.WARNING
-                    result.error_message = slow_msg
-                    db.commit()
-
-                    await _create_and_send_alert(db, site, result, slow_msg)
-                else:
-                    logger.info(
-                        f"Site {site.name} is slow ({int(response_time)}ms > {slow_threshold}ms) "
-                        f"but not sustained yet — no alert"
-                    )
+                # Don't alert immediately — let _handle_slow_sites do consolidated alerting
+                logger.info(f"Site {site.name} slow ({int(response_time)}ms) — consolidated check will handle")
+                # Still run the consolidated check
+                await _handle_slow_sites(db)
                 return
 
-            # Site is OK and fast — resolve any open alerts
+            # Site OK and fast — resolve open alerts
             open_alerts = (
                 db.query(Alert)
                 .filter(Alert.site_id == site.id, Alert.resolved == False)
@@ -168,23 +235,17 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
                         message=f"{site.name} ({site.url}) is back online. Response: {int(response_time)}ms",
                     )
                 except Exception as e:
-                    logger.error(f"Failed to send recovery alert for {site.name}: {e}")
+                    logger.error(f"Recovery alert failed for {site.name}: {e}")
             db.commit()
             return
 
-        # Any non-OK status triggers an immediate alert
+        # Non-OK status — immediate alert
         if _is_immediate_alert(result):
-            error_msg = (
-                f"HTTP {result.status_code} error on {site.name} ({site.url}). "
-                f"{result.error_message or ''}"
-            ).strip()
+            error_msg = f"HTTP {result.status_code} error on {site.name} ({site.url}). {result.error_message or ''}".strip()
         else:
-            error_msg = (
-                result.error_message
-                or f"Site {site.name} ({site.url}) is {result.status.value}."
-            )
+            error_msg = result.error_message or f"Site {site.name} ({site.url}) is {result.status.value}."
 
-        logger.warning(f"Alert for {site.name}: {result.status.value} — {error_msg[:100]}")
+        logger.warning(f"Alert: {site.name} — {result.status.value} — {error_msg[:100]}")
         await _create_and_send_alert(db, site, result, error_msg)
 
     except Exception as e:

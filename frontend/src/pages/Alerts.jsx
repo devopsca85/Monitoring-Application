@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus } from '../services/api';
+import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus, getResults } from '../services/api';
 
 function formatCST(dateStr) {
   if (!dateStr) return '-';
@@ -16,55 +16,54 @@ function formatDuration(startStr, endStr) {
   if (!startStr) return '-';
   const start = new Date(startStr).getTime();
   const end = endStr ? new Date(endStr).getTime() : Date.now();
-  const diffSec = Math.round((end - start) / 1000);
-  if (diffSec < 60) return `${diffSec}s`;
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ${diffSec % 60}s`;
-  const h = Math.floor(diffSec / 3600);
-  const m = Math.floor((diffSec % 3600) / 60);
+  const sec = Math.round((end - start) / 1000);
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
   if (h < 24) return `${h}h ${m}m`;
-  const d = Math.floor(h / 24);
-  return `${d}d ${h % 24}h`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 export default function Alerts() {
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [history, setHistory] = useState([]);
   const [sites, setSites] = useState([]);
-  const [tab, setTab] = useState('active');
+  const [tab, setTab] = useState('overview');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = () => {
+    setError('');
     Promise.all([
-      getAlerts(false).then((r) => setActiveAlerts(r.data || [])).catch((e) => { console.error('Active alerts:', e); setActiveAlerts([]); }),
-      getAlertHistory(100).then((r) => setHistory(r.data || [])).catch((e) => { console.error('Alert history:', e); setHistory([]); }),
-      getSitesStatus().then((r) => setSites(r.data || [])).catch((e) => { console.error('Sites status:', e); setSites([]); }),
+      getAlerts(false).then((r) => { setActiveAlerts(r.data || []); return r.data; })
+        .catch((e) => { console.error('Active alerts failed:', e); setError('Failed to load alerts — check browser console'); return []; }),
+      getAlertHistory(100).then((r) => { setHistory(r.data || []); return r.data; })
+        .catch((e) => { console.error('Alert history failed:', e); return []; }),
+      getSitesStatus().then((r) => { setSites(r.data || []); return r.data; })
+        .catch((e) => { console.error('Sites status failed:', e); return []; }),
     ]).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
-  useEffect(() => {
-    const id = setInterval(load, 15000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => { const id = setInterval(load, 15000); return () => clearInterval(id); }, []);
 
-  const handleResolve = async (id) => {
-    await resolveAlert(id);
-    load();
-  };
+  const handleResolve = async (id) => { await resolveAlert(id); load(); };
 
   const resolvedAlerts = history.filter((a) => a.resolved);
   const criticalSites = sites.filter((s) => s.last_status === 'critical');
-  const warningSites = sites.filter((s) => s.last_status === 'warning');
-  const slowSites = sites.filter((s) => s.is_slow);
+  const warningSites = sites.filter((s) => s.last_status === 'warning' || s.is_slow);
+  const healthySites = sites.filter((s) => s.is_active && s.last_status === 'ok' && !s.is_slow);
 
-  const tabData = tab === 'active' ? activeAlerts : tab === 'resolved' ? resolvedAlerts : history;
+  if (loading) return <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading alerts...</div>;
 
   return (
     <div>
       <div className="page-header">
-        <h2>Alerts & Monitoring Status</h2>
-        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Auto-refreshes every 15s | Times in CST</span>
+        <h2>Alerts & Monitoring</h2>
+        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Auto-refreshes every 15s | CST timezone</span>
       </div>
+
+      {error && <div className="error-message" style={{ marginBottom: '16px' }}>{error}</div>}
 
       {/* Summary Cards */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: '20px' }}>
@@ -77,12 +76,12 @@ export default function Alerts() {
           <div className="stat-label">Sites Down</div>
         </div>
         <div className="stat-card warning">
-          <div className="stat-value">{warningSites.length + slowSites.length}</div>
+          <div className="stat-value">{warningSites.length}</div>
           <div className="stat-label">Warnings / Slow</div>
         </div>
         <div className="stat-card ok">
-          <div className="stat-value">{resolvedAlerts.length}</div>
-          <div className="stat-label">Resolved (recent)</div>
+          <div className="stat-value">{healthySites.length}</div>
+          <div className="stat-label">Healthy</div>
         </div>
         <div className="stat-card info">
           <div className="stat-value">{history.length}</div>
@@ -90,39 +89,13 @@ export default function Alerts() {
         </div>
       </div>
 
-      {/* Current Site Health — always visible */}
-      {(criticalSites.length > 0 || slowSites.length > 0) && (
-        <div className="card" style={{ marginBottom: '20px' }}>
-          <div className="card-header"><h3>Current Issues</h3></div>
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr><th>Site</th><th>Status</th><th>Response</th><th>Last Check</th><th>Issue</th></tr>
-              </thead>
-              <tbody>
-                {[...criticalSites, ...slowSites].map((s) => (
-                  <tr key={s.id} style={{ background: s.last_status === 'critical' ? 'rgba(229,62,62,0.03)' : 'rgba(221,107,32,0.03)' }}>
-                    <td><Link to={`/sites/${s.id}`} style={{ fontWeight: 500 }}>{s.name}</Link></td>
-                    <td><span className={`badge badge-${s.last_status || 'warning'}`}>{s.last_status || 'slow'}</span></td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{s.last_response_time_ms ? `${Math.round(s.last_response_time_ms)}ms` : '-'}</td>
-                    <td style={{ fontSize: '12px' }}>{formatCST(s.last_checked_at)}</td>
-                    <td style={{ fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.last_error || (s.is_slow ? `Slow (>${s.slow_threshold_ms}ms)` : 'Down')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Tab Buttons */}
+      {/* Tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
         {[
+          { key: 'overview', label: 'Overview' },
           { key: 'active', label: `Active (${activeAlerts.length})` },
-          { key: 'resolved', label: `Resolved (${resolvedAlerts.length})` },
-          { key: 'all', label: `All History (${history.length})` },
+          { key: 'history', label: `History (${history.length})` },
+          { key: 'sites', label: `All Sites (${sites.length})` },
         ].map((t) => (
           <button key={t.key} className={`btn ${tab === t.key ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab(t.key)}>
             {t.label}
@@ -130,99 +103,157 @@ export default function Alerts() {
         ))}
       </div>
 
-      {/* Alert Table */}
-      <div className="card">
-        <div className="card-header">
-          <h3>Alert Log</h3>
-        </div>
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Site</th>
-                <th>Severity</th>
-                <th>Message</th>
-                <th>Triggered (CST)</th>
-                <th>Resolved (CST)</th>
-                <th>Duration</th>
-                <th>Status</th>
-                {tab !== 'resolved' && <th>Action</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {tabData.map((alert) => (
-                <tr key={`${alert.id}-${alert.resolved}`} style={{
-                  background: !alert.resolved ? 'rgba(229, 62, 62, 0.03)' : undefined,
-                }}>
-                  <td>
-                    <Link to={`/sites/${alert.site_id}`} style={{ fontWeight: 500 }}>
-                      {alert.site_name || `Site #${alert.site_id}`}
-                    </Link>
-                    {alert.site_url && (
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {alert.site_url}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`badge badge-${alert.alert_type || 'critical'}`}>
-                      {alert.alert_type || 'critical'}
-                    </span>
-                  </td>
-                  <td style={{ maxWidth: '280px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {alert.message || '-'}
-                  </td>
-                  <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    {formatCST(alert.created_at)}
-                  </td>
-                  <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    {alert.resolved ? formatCST(alert.resolved_at) : (
-                      <span style={{ color: 'var(--color-status-critical)', fontWeight: 600, fontSize: '11px' }}>ONGOING</span>
-                    )}
-                  </td>
-                  <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    <span style={{
-                      color: !alert.resolved ? 'var(--color-status-critical)' : 'var(--color-text-secondary)',
-                      fontWeight: !alert.resolved ? 600 : 400,
-                    }}>
-                      {formatDuration(alert.created_at, alert.resolved_at)}
-                    </span>
-                  </td>
-                  <td>
-                    {alert.resolved ? (
-                      <span className="badge badge-ok">Resolved</span>
-                    ) : (
-                      <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Active</span>
-                    )}
-                  </td>
-                  {tab !== 'resolved' && (
+      {/* OVERVIEW TAB */}
+      {tab === 'overview' && (
+        <>
+          {/* Current Issues */}
+          {(criticalSites.length > 0 || warningSites.length > 0) ? (
+            <div className="card" style={{ marginBottom: '20px' }}>
+              <div className="card-header"><h3>Current Issues</h3></div>
+              <div className="table-container">
+                <table>
+                  <thead><tr><th>Site</th><th>Status</th><th>Response</th><th>Last Check (CST)</th><th>Issue</th></tr></thead>
+                  <tbody>
+                    {[...criticalSites, ...warningSites].map((s) => (
+                      <tr key={s.id} style={{ background: s.last_status === 'critical' ? 'rgba(229,62,62,0.04)' : 'rgba(221,107,32,0.04)' }}>
+                        <td><Link to={`/sites/${s.id}`} style={{ fontWeight: 500 }}>{s.name}</Link></td>
+                        <td><span className={`badge badge-${s.last_status || 'warning'}`}>{s.last_status || 'slow'}</span></td>
+                        <td style={{ fontVariantNumeric: 'tabular-nums' }}>{s.last_response_time_ms ? `${Math.round(s.last_response_time_ms)}ms` : '-'}</td>
+                        <td style={{ fontSize: '12px' }}>{formatCST(s.last_checked_at)}</td>
+                        <td style={{ fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {s.last_error || (s.is_slow ? `Slow (>${s.slow_threshold_ms}ms)` : 'Down')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="card" style={{ marginBottom: '20px', textAlign: 'center', padding: '40px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '8px', color: 'var(--color-status-ok)' }}>&#10003;</div>
+              <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>All Systems Operational</div>
+              <div style={{ color: 'var(--color-text-secondary)' }}>All {sites.length} monitored sites are running normally.</div>
+            </div>
+          )}
+
+          {/* Recent Alert Activity */}
+          <div className="card">
+            <div className="card-header"><h3>Recent Alert Activity</h3></div>
+            {history.length > 0 ? (
+              <div className="table-container">
+                <table>
+                  <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>When (CST)</th><th>Duration</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {history.slice(0, 15).map((a) => (
+                      <tr key={a.id} style={{ background: !a.resolved ? 'rgba(229,62,62,0.04)' : undefined }}>
+                        <td><Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link></td>
+                        <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
+                        <td style={{ maxWidth: '250px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.message || '-'}</td>
+                        <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
+                        <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
+                        <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Active</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ textAlign: 'center', padding: '30px', color: 'var(--color-text-secondary)' }}>No alert activity recorded yet. Alerts will appear here when sites go down or experience issues.</p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ACTIVE TAB */}
+      {tab === 'active' && (
+        <div className="card">
+          <div className="card-header"><h3>Active Alerts</h3></div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>Since (CST)</th><th>Duration</th><th>Action</th></tr></thead>
+              <tbody>
+                {activeAlerts.map((a) => (
+                  <tr key={a.id} style={{ background: 'rgba(229,62,62,0.04)' }}>
                     <td>
-                      {!alert.resolved && (
-                        <button onClick={() => handleResolve(alert.id)} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>
-                          Resolve
-                        </button>
-                      )}
+                      <Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link>
+                      {a.site_url && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{a.site_url}</div>}
                     </td>
-                  )}
-                </tr>
-              ))}
-              {tabData.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={tab !== 'resolved' ? 8 : 7} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
-                    {tab === 'active' ? (
-                      <div>
-                        <div style={{ fontSize: '24px', marginBottom: '8px', color: 'var(--color-status-ok)' }}>&#10003;</div>
-                        <div style={{ fontWeight: 500, marginBottom: '4px' }}>All Clear</div>
-                        <div>No active alerts — all monitored sites are running normally.</div>
-                      </div>
-                    ) : tab === 'resolved' ? 'No resolved alerts in recent history' : 'No alerts recorded yet'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
+                    <td style={{ maxWidth: '300px', fontSize: '13px' }}>{a.message || '-'}</td>
+                    <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
+                    <td style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-status-critical)' }}>{formatDuration(a.created_at, null)}</td>
+                    <td><button onClick={() => handleResolve(a.id)} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>Resolve</button></td>
+                  </tr>
+                ))}
+                {activeAlerts.length === 0 && (
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
+                    <span style={{ color: 'var(--color-status-ok)', fontSize: '20px' }}>&#10003;</span><br/>No active alerts
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* HISTORY TAB */}
+      {tab === 'history' && (
+        <div className="card">
+          <div className="card-header"><h3>Full Alert History</h3></div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>Triggered (CST)</th><th>Resolved (CST)</th><th>Duration</th><th>Status</th></tr></thead>
+              <tbody>
+                {history.map((a) => (
+                  <tr key={a.id}>
+                    <td><Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link></td>
+                    <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
+                    <td style={{ maxWidth: '250px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.message || '-'}</td>
+                    <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
+                    <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{a.resolved ? formatCST(a.resolved_at) : <span style={{ color: 'var(--color-status-critical)', fontWeight: 600 }}>ONGOING</span>}</td>
+                    <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
+                    <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical">Active</span>}</td>
+                  </tr>
+                ))}
+                {history.length === 0 && (
+                  <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>No alert history yet</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SITES TAB */}
+      {tab === 'sites' && (
+        <div className="card">
+          <div className="card-header"><h3>All Monitored Sites</h3></div>
+          <div className="table-container">
+            <table>
+              <thead><tr><th>Site</th><th>URL</th><th>Status</th><th>Response</th><th>Last Check (CST)</th><th>Enabled</th></tr></thead>
+              <tbody>
+                {sites.map((s) => (
+                  <tr key={s.id}>
+                    <td><Link to={`/sites/${s.id}`} style={{ fontWeight: 500 }}>{s.name}</Link></td>
+                    <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.url}</td>
+                    <td>
+                      {s.last_status ? <span className={`badge badge-${s.last_status}`}>{s.last_status}</span> : <span style={{ color: 'var(--color-text-secondary)' }}>--</span>}
+                      {s.is_slow && <span className="badge badge-warning" style={{ marginLeft: '4px', fontSize: '10px' }}>SLOW</span>}
+                    </td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums', fontSize: '12px' }}>{s.last_response_time_ms ? `${Math.round(s.last_response_time_ms)}ms` : '-'}</td>
+                    <td style={{ fontSize: '12px' }}>{formatCST(s.last_checked_at)}</td>
+                    <td>{s.is_active ? <span className="badge badge-ok">Enabled</span> : <span className="badge badge-critical">Disabled</span>}</td>
+                  </tr>
+                ))}
+                {sites.length === 0 && (
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>No sites configured</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

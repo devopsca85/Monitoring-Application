@@ -68,6 +68,15 @@ export const testTeams = () => api.post('/admin/settings/teams/test');
 export const getSsoSettings = () => api.get('/admin/settings/sso');
 export const updateSsoSettings = (data) => api.put('/admin/settings/sso', data);
 
+// Admin — Alarm Audio
+export const uploadAlarmAudio = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/admin/alarm-audio', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const deleteAlarmAudio = () => api.delete('/admin/alarm-audio');
+export const getAlarmAudioInfo = () => api.get('/admin/alarm-audio/info');
+
 // SSO (public)
 export const getSsoConfig = () => api.get('/sso/config');
 export const ssoCallback = (data) => api.post('/sso/callback', data);
