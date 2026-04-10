@@ -170,13 +170,13 @@ async def send_alert(
     if channel in ("email", "both") and to_emails:
         await send_email_alert(to_emails, subject, html_body)
 
-    # Teams: always send if webhook is configured (global setting),
-    # regardless of site-level channel — Teams is a system-wide notification
+    # Teams: send if webhook is configured AND enabled
     db = SessionLocal()
     try:
         teams_configured = bool(_get_setting(db, "teams_webhook_url"))
+        teams_enabled = _get_setting(db, "teams_enabled") != "false"
     finally:
         db.close()
 
-    if teams_configured:
+    if teams_configured and teams_enabled:
         await send_teams_alert(subject, message, teams_color)

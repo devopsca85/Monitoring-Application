@@ -82,7 +82,7 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
 
         if result.status == AlertStatus.OK:
             # Check for slowness even on OK status
-            slow_threshold = site.slow_threshold_ms or 8000
+            slow_threshold = site.slow_threshold_ms or 10000
             response_time = result.response_time_ms or 0
 
             if response_time > slow_threshold:

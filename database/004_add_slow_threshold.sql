@@ -13,7 +13,7 @@ SET @col_exists = (
 );
 
 SET @sql = IF(@col_exists = 0,
-    'ALTER TABLE sites ADD COLUMN slow_threshold_ms INT DEFAULT 8000 AFTER check_interval_minutes',
+    'ALTER TABLE sites ADD COLUMN slow_threshold_ms INT DEFAULT 10000 AFTER check_interval_minutes',
     'SELECT ''Column slow_threshold_ms already exists'' AS status'
 );
 

@@ -149,6 +149,7 @@ def get_settings(db: Session = Depends(get_db), admin: User = Depends(require_ad
         smtp_use_tls=_get_setting(db, "smtp_use_tls") or "true",
         teams_webhook_url=teams_webhook[:8] + "****" if teams_webhook else "",
         teams_webhook_set=bool(teams_webhook),
+        teams_enabled=_get_setting(db, "teams_enabled") != "false",
     )
 
 
@@ -177,6 +178,8 @@ def update_teams_settings(
 ):
     if data.teams_webhook_url:
         _set_setting(db, "teams_webhook_url", data.teams_webhook_url, encrypted=True)
+    if data.teams_enabled is not None:
+        _set_setting(db, "teams_enabled", "true" if data.teams_enabled else "false")
     db.commit()
     return {"status": "Teams settings saved"}
 

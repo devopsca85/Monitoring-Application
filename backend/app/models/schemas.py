@@ -57,7 +57,7 @@ class SiteCreate(BaseModel):
     url: str
     check_type: CheckType = CheckType.UPTIME
     check_interval_minutes: int = 5
-    slow_threshold_ms: int = 8000
+    slow_threshold_ms: int = 10000
     notification_channel: NotificationChannel = NotificationChannel.EMAIL
     notification_emails: str = ""
     credentials: SiteCredentialCreate | None = None
@@ -206,6 +206,7 @@ class SystemSettingsResponse(BaseModel):
     smtp_use_tls: str = "true"
     teams_webhook_url: str = ""
     teams_webhook_set: bool = False
+    teams_enabled: bool = True
 
 class SmtpSettingsUpdate(BaseModel):
     smtp_host: str = ""
@@ -217,6 +218,7 @@ class SmtpSettingsUpdate(BaseModel):
 
 class TeamsSettingsUpdate(BaseModel):
     teams_webhook_url: str = ""
+    teams_enabled: bool | None = None
 
 class SmtpTestRequest(BaseModel):
     to_email: str

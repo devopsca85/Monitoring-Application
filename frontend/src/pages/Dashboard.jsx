@@ -93,247 +93,24 @@ function formatCST(dateStr) {
   }) + ' CST';
 }
 
-// --- Alarm Sound (Web Audio API — no external files) ---
-let alarmAudioCtx = null;
-let alarmInterval = null;
-
-function playAlarmBeep() {
-  try {
-    if (!alarmAudioCtx) alarmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = alarmAudioCtx.createOscillator();
-    const gain = alarmAudioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(alarmAudioCtx.destination);
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(880, alarmAudioCtx.currentTime);
-    osc.frequency.setValueAtTime(660, alarmAudioCtx.currentTime + 0.15);
-    osc.frequency.setValueAtTime(880, alarmAudioCtx.currentTime + 0.3);
-    gain.gain.setValueAtTime(0.3, alarmAudioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, alarmAudioCtx.currentTime + 0.5);
-    osc.start(alarmAudioCtx.currentTime);
-    osc.stop(alarmAudioCtx.currentTime + 0.5);
-  } catch (e) {
-    // Audio not available
-  }
-}
-
-function startAlarmLoop() {
-  if (alarmInterval) return;
-  playAlarmBeep();
-  alarmInterval = setInterval(playAlarmBeep, 5000); // Beep every 5 seconds
-}
-
-function stopAlarmLoop() {
-  if (alarmInterval) {
-    clearInterval(alarmInterval);
-    alarmInterval = null;
-  }
-}
-
-// --- Alarm Banner ---
-function AlarmBanner({ activeAlerts, onAcknowledge }) {
-  if (activeAlerts.length === 0) return null;
-
-  return (
-    <div style={{
-      background: 'linear-gradient(90deg, #e53e3e, #c53030)',
-      color: 'white',
-      padding: '12px 24px',
-      borderRadius: 'var(--radius-lg)',
-      marginBottom: '20px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '16px',
-      animation: 'alarmPulse 1.5s ease-in-out infinite',
-      boxShadow: '0 4px 15px rgba(229, 62, 62, 0.4)',
-    }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: '50%',
-        background: 'rgba(255,255,255,0.2)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '20px', flexShrink: 0,
-        animation: 'alarmShake 0.5s ease-in-out infinite',
-      }}>
-        &#128680;
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '2px' }}>
-          ALERT: {activeAlerts.length} site{activeAlerts.length > 1 ? 's' : ''} down!
-        </div>
-        <div style={{ fontSize: '12px', opacity: 0.9 }}>
-          {activeAlerts.map((a) => a.site_name || `Site #${a.site_id}`).join(', ')}
-        </div>
-      </div>
-      <button onClick={onAcknowledge} style={{
-        background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)',
-        color: 'white', padding: '8px 16px', borderRadius: '20px',
-        cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}>
-        Acknowledge
-      </button>
-    </div>
-  );
-}
-
-function ToastContainer({ toasts, onDismiss }) {
-  return (
-    <div style={{
-      position: 'fixed', top: 70, right: 24, zIndex: 9999,
-      display: 'flex', flexDirection: 'column', gap: '10px',
-      maxWidth: '420px', pointerEvents: 'none',
-    }}>
-      {toasts.map((t) => (
-        <div key={t.id} style={{
-          pointerEvents: 'auto',
-          background: t.type === 'critical' ? '#fff5f5' : t.type === 'ok' ? '#f0fff4' : '#fffaf0',
-          border: `1px solid ${t.type === 'critical' ? '#feb2b2' : t.type === 'ok' ? '#9ae6b4' : '#fbd38d'}`,
-          borderLeft: `4px solid ${t.type === 'critical' ? '#e53e3e' : t.type === 'ok' ? '#38a169' : '#dd6b20'}`,
-          borderRadius: '8px',
-          padding: '14px 18px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-          animation: 'slideInRight 0.3s ease-out',
-          display: 'flex', gap: '12px', alignItems: 'flex-start',
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px',
-            background: t.type === 'critical' ? '#e53e3e' : t.type === 'ok' ? '#38a169' : '#dd6b20',
-            color: 'white', fontWeight: 700,
-          }}>
-            {t.type === 'critical' ? '!' : t.type === 'ok' ? '\u2713' : '\u26A0'}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text)', marginBottom: '2px' }}>
-              {t.title}
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {t.message}
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-              {formatCST(new Date().toISOString())}
-            </div>
-          </div>
-          <button onClick={() => onDismiss(t.id)} style={{
-            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)',
-            fontSize: '18px', lineHeight: 1, padding: '0 2px', flexShrink: 0,
-          }}>&times;</button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [sitesStatus, setSitesStatus] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [alertHistory, setAlertHistory] = useState([]);
-  const [toasts, setToasts] = useState([]);
-  const [alarmActive, setAlarmActive] = useState(false);
-  const [alarmAcknowledged, setAlarmAcknowledged] = useState(false);
   const [refreshIn, setRefreshIn] = useState(15);
   const nextRefreshAt = useRef(Date.now() + 15000);
-  const knownAlertIds = useRef(new Set());
-  const isFirstLoad = useRef(true);
-
-  const addToast = (title, message, type = 'critical') => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, title, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 8000);
-  };
-
-  const dismissToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
-
-  // Alarm sound control
-  useEffect(() => {
-    if (alarmActive && !alarmAcknowledged) {
-      startAlarmLoop();
-    } else {
-      stopAlarmLoop();
-    }
-    return () => stopAlarmLoop();
-  }, [alarmActive, alarmAcknowledged]);
-
-  const handleAcknowledge = () => {
-    setAlarmAcknowledged(true);
-    stopAlarmLoop();
-  };
 
   const loadData = () => {
     Promise.all([
       getDashboardStats().then((r) => setStats(r.data)).catch(() => {}),
       getSitesStatus().then((r) => setSitesStatus(r.data)).catch(() => {}),
-      getAlerts().then((r) => {
-        const newAlerts = r.data;
-        setAlerts(newAlerts);
-
-        // Alarm: activate if any active alerts exist
-        if (newAlerts.length > 0) {
-          setAlarmActive(true);
-        } else {
-          setAlarmActive(false);
-          setAlarmAcknowledged(false);
-        }
-
-        // Detect NEW alerts since last refresh — toast + sound
-        if (!isFirstLoad.current) {
-          for (const a of newAlerts) {
-            if (!knownAlertIds.current.has(a.id)) {
-              const siteName = a.site_name || `Site #${a.site_id}`;
-              addToast(
-                `Alert: ${siteName}`,
-                a.message || 'Monitoring alert triggered',
-                a.alert_type || 'critical',
-              );
-              // Play immediate beep for new alert
-              playAlarmBeep();
-              // Reset acknowledge so alarm resumes for new incidents
-              setAlarmAcknowledged(false);
-            }
-          }
-        }
-        knownAlertIds.current = new Set(newAlerts.map((a) => a.id));
-        isFirstLoad.current = false;
-      }).catch(() => {}),
-      getAlertHistory(30).then((r) => {
-        const history = r.data;
-        setAlertHistory(history);
-
-        // Also detect resolved alerts (recovery)
-        if (!isFirstLoad.current) {
-          for (const a of history) {
-            if (a.resolved && !knownAlertIds.current.has(`resolved-${a.id}`)) {
-              // Check if this was recently resolved (within last 30 seconds)
-              if (a.resolved_at) {
-                const resolvedTime = new Date(a.resolved_at).getTime();
-                if (Date.now() - resolvedTime < 30000) {
-                  addToast(
-                    `Recovered: ${a.site_name}`,
-                    `${a.site_name} is back online`,
-                    'ok',
-                  );
-                  knownAlertIds.current.add(`resolved-${a.id}`);
-                }
-              }
-            }
-          }
-        }
-      }).catch(() => {}),
+      getAlerts().then((r) => setAlerts(r.data)).catch(() => {}),
+      getAlertHistory(30).then((r) => setAlertHistory(r.data)).catch(() => {}),
     ]);
     nextRefreshAt.current = Date.now() + 15000;
     setRefreshIn(15);
   };
-
-  // Also detect site status changes from sitesStatus
-  useEffect(() => {
-    if (isFirstLoad.current) return;
-    for (const site of sitesStatus) {
-      if (site.last_status === 'critical' || site.last_status === 'warning') {
-        // These are handled by the alerts flow above
-      }
-    }
-  }, [sitesStatus]);
 
   // Single 1-second tick that handles both countdown and data refresh
   useEffect(() => {
@@ -359,8 +136,6 @@ export default function Dashboard() {
 
   return (
     <div>
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      <AlarmBanner activeAlerts={alerts} onAcknowledge={handleAcknowledge} />
       <div className="page-header">
         <h2>Dashboard</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

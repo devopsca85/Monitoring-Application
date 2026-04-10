@@ -12,7 +12,7 @@ export default function SiteForm() {
     url: '',
     check_type: 'uptime',
     check_interval_minutes: 5,
-    slow_threshold_ms: 8000,
+    slow_threshold_ms: 10000,
     notification_channel: 'email',
     notification_emails: '',
     is_active: true,
@@ -164,8 +164,8 @@ export default function SiteForm() {
                 <option value="2000">2 seconds</option>
                 <option value="3000">3 seconds</option>
                 <option value="5000">5 seconds</option>
-                <option value="8000">8 seconds (default)</option>
-                <option value="10000">10 seconds</option>
+                <option value="8000">8 seconds</option>
+                <option value="10000">10 seconds (default)</option>
                 <option value="15000">15 seconds</option>
                 <option value="20000">20 seconds</option>
                 <option value="30000">30 seconds</option>

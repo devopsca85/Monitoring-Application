@@ -34,20 +34,19 @@ export default function Alerts() {
   const load = () => {
     setLoading(true);
     if (filter === 'all') {
-      // Fetch both and merge
       Promise.all([
-        getAlerts(false).then((r) => r.data),
-        getAlerts(true).then((r) => r.data),
+        getAlerts(false).then((r) => r.data).catch((e) => { console.error('Fetch active alerts failed:', e); return []; }),
+        getAlerts(true).then((r) => r.data).catch((e) => { console.error('Fetch resolved alerts failed:', e); return []; }),
       ]).then(([active, resolved]) => {
         const merged = [...active, ...resolved].sort(
           (a, b) => new Date(b.created_at) - new Date(a.created_at)
         );
         setAlerts(merged);
-      }).catch(() => {}).finally(() => setLoading(false));
+      }).finally(() => setLoading(false));
     } else {
       getAlerts(filter === 'resolved')
         .then((r) => setAlerts(r.data))
-        .catch(() => {})
+        .catch((e) => { console.error('Fetch alerts failed:', e); setAlerts([]); })
         .finally(() => setLoading(false));
     }
   };
@@ -56,7 +55,18 @@ export default function Alerts() {
 
   // Auto-refresh every 15 seconds
   useEffect(() => {
-    const id = setInterval(load, 15000);
+    const id = setInterval(() => {
+      if (filter === 'all') {
+        Promise.all([
+          getAlerts(false).then((r) => r.data).catch(() => []),
+          getAlerts(true).then((r) => r.data).catch(() => []),
+        ]).then(([active, resolved]) => {
+          setAlerts([...active, ...resolved].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        });
+      } else {
+        getAlerts(filter === 'resolved').then((r) => setAlerts(r.data)).catch(() => {});
+      }
+    }, 15000);
     return () => clearInterval(id);
   }, [filter]);
 

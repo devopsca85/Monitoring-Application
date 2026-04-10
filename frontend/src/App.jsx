@@ -11,6 +11,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminSettings from './pages/AdminSettings';
 import Profile from './pages/Profile';
 import Metrics from './pages/Metrics';
+import AlertMonitor from './components/AlertMonitor';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -43,6 +44,7 @@ function App() {
     <div className="app-layout">
       <Sidebar user={user} />
       <div style={{ flex: 1, marginLeft: 260, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <AlertMonitor />
         <TopBar user={user} setUser={setUser} />
         <main className="main-content" style={{ marginLeft: 0 }}>
           <Routes>

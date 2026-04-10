@@ -56,7 +56,7 @@ class Site(Base):
     url = Column(String(500), nullable=False)
     check_type = Column(Enum(CheckType), default=CheckType.UPTIME)
     check_interval_minutes = Column(Integer, default=5)
-    slow_threshold_ms = Column(Integer, default=8000)  # Alert if response > this (ms)
+    slow_threshold_ms = Column(Integer, default=10000)  # Alert if response > this (ms)
     is_active = Column(Boolean, default=True)
     notification_channel = Column(
         Enum(NotificationChannel), default=NotificationChannel.EMAIL

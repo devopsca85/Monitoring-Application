@@ -49,7 +49,7 @@ export default function Metrics() {
       icon: '\u23F1',
       color: '#dd6b20',
       items: [
-        { label: 'Threshold', value: 'Configurable per site (default: 8000ms / 8 seconds)' },
+        { label: 'Threshold', value: 'Configurable per site (default: 10000ms / 10 seconds)' },
         { label: 'Options', value: '2s, 3s, 5s, 8s (default), 10s, 15s, 20s, 30s' },
         { label: 'Alert Level', value: 'WARNING — site is up but slow' },
         { label: 'Measurement', value: 'Time from form submit to page load + network idle (excludes JS rendering buffer)' },

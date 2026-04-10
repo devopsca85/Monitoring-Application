@@ -8,7 +8,7 @@ export default function AdminSettings() {
     smtp_from_email: '', smtp_use_tls: 'true',
   });
   const [smtpPasswordSet, setSmtpPasswordSet] = useState(false);
-  const [teams, setTeams] = useState({ teams_webhook_url: '' });
+  const [teams, setTeams] = useState({ teams_webhook_url: '', teams_enabled: true });
   const [teamsSet, setTeamsSet] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [msg, setMsg] = useState({ text: '', type: '' });
@@ -31,7 +31,7 @@ export default function AdminSettings() {
           smtp_use_tls: s.smtp_use_tls || 'true',
         });
         setSmtpPasswordSet(s.smtp_password_set);
-        setTeams({ teams_webhook_url: '' });
+        setTeams({ teams_webhook_url: '', teams_enabled: s.teams_enabled !== false });
         setTeamsSet(s.teams_webhook_set);
       })
       .catch(() => {})
@@ -158,10 +158,26 @@ export default function AdminSettings() {
         <div className="card">
           <div className="card-header">
             <h3>Microsoft Teams Webhook</h3>
-            <span className={`badge ${teamsSet ? 'badge-ok' : 'badge-warning'}`}>
-              {teamsSet ? 'Configured' : 'Not Configured'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className={`badge ${teamsSet && teams.teams_enabled ? 'badge-ok' : 'badge-warning'}`}>
+                {!teamsSet ? 'Not Configured' : teams.teams_enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}>
+                <input
+                  type="checkbox"
+                  checked={teams.teams_enabled}
+                  onChange={(e) => setTeams({ ...teams, teams_enabled: e.target.checked })}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                />
+                {teams.teams_enabled ? 'ON' : 'OFF'}
+              </label>
+            </div>
           </div>
+          {!teams.teams_enabled && (
+            <div style={{ background: '#fffaf0', border: '1px solid #fbd38d', borderRadius: 'var(--radius)', padding: '10px 14px', fontSize: '13px', color: '#dd6b20', marginBottom: '16px' }}>
+              Teams notifications are disabled. Toggle ON to send alerts to Teams.
+            </div>
+          )}
           <div className="form-group">
             <label>Webhook URL {teamsSet && <span style={{ color: 'var(--color-status-ok)', fontSize: '12px' }}>(currently set — leave blank to keep)</span>}</label>
             <input value={teams.teams_webhook_url} onChange={(e) => setTeams({ ...teams, teams_webhook_url: e.target.value })} placeholder={teamsSet ? 'Leave blank to keep current webhook' : 'https://your-org.webhook.office.com/webhookb2/...'} />
