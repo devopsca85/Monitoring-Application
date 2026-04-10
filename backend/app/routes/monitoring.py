@@ -95,10 +95,10 @@ def get_alerts(
             site_id=a.site_id,
             site_name=sites[a.site_id].name if a.site_id in sites else f"Site #{a.site_id}",
             site_url=sites[a.site_id].url if a.site_id in sites else "",
-            alert_type=a.alert_type if a.alert_type else None,
+            alert_type=a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else (str(a.alert_type) if a.alert_type else None),
             message=a.message or "",
-            notified=bool(a.notified),
-            resolved=bool(a.resolved),
+            notified=bool(a.notified) if a.notified is not None else False,
+            resolved=bool(a.resolved) if a.resolved is not None else False,
             created_at=a.created_at,
             resolved_at=a.resolved_at,
         )
@@ -130,14 +130,76 @@ def get_alert_history(
             site_id=a.site_id,
             site_name=s.name if s else f"Site #{a.site_id}",
             site_url=s.url if s else "",
-            alert_type=a.alert_type if a.alert_type else None,
+            alert_type=a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else (str(a.alert_type) if a.alert_type else None),
             message=a.message or "",
-            notified=bool(a.notified),
-            resolved=bool(a.resolved),
+            notified=bool(a.notified) if a.notified is not None else False,
+            resolved=bool(a.resolved) if a.resolved is not None else False,
             created_at=a.created_at,
             resolved_at=a.resolved_at,
         ))
     return result
+
+
+@router.get("/alerts-raw")
+def get_alerts_raw(
+    resolved: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Fallback: returns alerts as plain dicts — no Pydantic serialization."""
+    alerts = (
+        db.query(Alert)
+        .filter(Alert.resolved == resolved)
+        .order_by(Alert.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    site_ids = {a.site_id for a in alerts}
+    sites_map = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()} if site_ids else {}
+
+    return [
+        {
+            "id": a.id,
+            "site_id": a.site_id,
+            "site_name": sites_map[a.site_id].name if a.site_id in sites_map else f"Site #{a.site_id}",
+            "site_url": sites_map[a.site_id].url if a.site_id in sites_map else "",
+            "alert_type": a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else str(a.alert_type or "critical"),
+            "message": a.message or "",
+            "notified": bool(a.notified or False),
+            "resolved": bool(a.resolved or False),
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+        }
+        for a in alerts
+    ]
+
+
+@router.get("/alert-history-raw")
+def get_alert_history_raw(
+    limit: int = Query(default=100, le=500),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Fallback: returns all alert history as plain dicts."""
+    alerts = db.query(Alert).order_by(Alert.created_at.desc()).limit(limit).all()
+    site_ids = {a.site_id for a in alerts}
+    sites_map = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()} if site_ids else {}
+
+    return [
+        {
+            "id": a.id,
+            "site_id": a.site_id,
+            "site_name": sites_map[a.site_id].name if a.site_id in sites_map else f"Site #{a.site_id}",
+            "site_url": sites_map[a.site_id].url if a.site_id in sites_map else "",
+            "alert_type": a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else str(a.alert_type or "critical"),
+            "message": a.message or "",
+            "notified": bool(a.notified or False),
+            "resolved": bool(a.resolved or False),
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+        }
+        for a in alerts
+    ]
 
 
 @router.get("/alerts/debug")

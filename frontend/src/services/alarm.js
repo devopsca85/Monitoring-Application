@@ -1,143 +1,117 @@
-// --- Global Alarm Sound ---
-// Uses HTML5 Audio as primary, Web Audio API as fallback
-// Survives page navigation (imported as module singleton)
+// ============================================================
+// GLOBAL ALARM — plays sound even when user is on other pages
+// Uses multiple strategies to ensure audio plays
+// ============================================================
 
 let alarmAudio = null;
 let alarmCtx = null;
 let alarmInterval = null;
-let audioReady = false;
+let unlocked = false;
 
-// Generate a WAV alarm tone in memory (no external files)
-function generateAlarmWav() {
-  const sampleRate = 8000;
-  const duration = 0.8;
-  const samples = Math.floor(sampleRate * duration);
-  const buffer = new ArrayBuffer(44 + samples * 2);
-  const view = new DataView(buffer);
-
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF');
-  view.setUint32(4, 36 + samples * 2, true);
-  w(8, 'WAVE'); w(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
-  w(36, 'data');
-  view.setUint32(40, samples * 2, true);
-
-  for (let i = 0; i < samples; i++) {
-    const t = i / sampleRate;
-    const freq = t < 0.25 ? 880 : t < 0.5 ? 660 : 880;
-    const env = Math.min(1, (duration - t) * 4) * Math.min(1, t * 20);
-    const val = Math.sin(2 * Math.PI * freq * t) * env * 0.6;
-    view.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, val * 32767)), true);
+// Strategy 1: Generate WAV blob and play via <audio>
+function makeWavUrl() {
+  const sr = 8000, dur = 0.8, n = Math.floor(sr * dur);
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  const s = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  s(0,'RIFF'); v.setUint32(4,36+n*2,true); s(8,'WAVE'); s(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true);
+  v.setUint16(34,16,true); s(36,'data'); v.setUint32(40,n*2,true);
+  for (let i = 0; i < n; i++) {
+    const t = i/sr, f = t<.25?880:t<.5?660:880;
+    const e = Math.min(1,(dur-t)*4)*Math.min(1,t*20);
+    v.setInt16(44+i*2, Math.round(Math.sin(2*Math.PI*f*t)*e*.6*32767), true);
   }
-
-  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  return URL.createObjectURL(new Blob([buf], {type:'audio/wav'}));
 }
 
-// Try Web Audio API beep as fallback
-function beepWithWebAudio() {
-  try {
-    if (!alarmCtx) {
-      alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (alarmCtx.state === 'suspended') {
-      alarmCtx.resume();
-    }
-    const osc = alarmCtx.createOscillator();
-    const gain = alarmCtx.createGain();
-    osc.connect(gain);
-    gain.connect(alarmCtx.destination);
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(880, alarmCtx.currentTime);
-    osc.frequency.setValueAtTime(660, alarmCtx.currentTime + 0.2);
-    osc.frequency.setValueAtTime(880, alarmCtx.currentTime + 0.4);
-    gain.gain.setValueAtTime(0.4, alarmCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, alarmCtx.currentTime + 0.6);
-    osc.start(alarmCtx.currentTime);
-    osc.stop(alarmCtx.currentTime + 0.6);
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function ensureAudio() {
+function getAudio() {
   if (!alarmAudio) {
-    alarmAudio = new Audio(generateAlarmWav());
+    alarmAudio = new Audio(makeWavUrl());
     alarmAudio.volume = 0.8;
+    // Preload
+    alarmAudio.load();
   }
   return alarmAudio;
 }
 
-export function playAlarmBeep() {
-  console.log('ALARM: playAlarmBeep called');
-
-  // Try HTML5 Audio first
+// Strategy 2: Web Audio API oscillator
+function beepOscillator() {
   try {
-    const audio = ensureAudio();
-    audio.currentTime = 0;
-    const promise = audio.play();
-    if (promise) {
-      promise.then(() => {
-        console.log('ALARM: Audio played via HTML5 Audio');
-        audioReady = true;
-      }).catch((e) => {
-        console.warn('ALARM: HTML5 Audio blocked, trying WebAudio:', e.message);
-        beepWithWebAudio();
-      });
+    if (!alarmCtx) alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (alarmCtx.state === 'suspended') alarmCtx.resume();
+    const o = alarmCtx.createOscillator(), g = alarmCtx.createGain();
+    o.connect(g); g.connect(alarmCtx.destination);
+    o.type = 'square';
+    const t = alarmCtx.currentTime;
+    o.frequency.setValueAtTime(880,t); o.frequency.setValueAtTime(660,t+.2); o.frequency.setValueAtTime(880,t+.4);
+    g.gain.setValueAtTime(.4,t); g.gain.exponentialRampToValueAtTime(.01,t+.6);
+    o.start(t); o.stop(t+.6);
+    return true;
+  } catch { return false; }
+}
+
+// Play alarm — tries Audio element first, falls back to oscillator
+export function playAlarmBeep() {
+  // Try Audio element
+  try {
+    const a = getAudio();
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && p.then) {
+      p.then(() => { unlocked = true; })
+       .catch(() => { beepOscillator(); });
     }
-  } catch (e) {
-    console.warn('ALARM: HTML5 Audio failed, trying WebAudio');
-    beepWithWebAudio();
+  } catch {
+    beepOscillator();
   }
 }
 
 export function startAlarmLoop() {
   if (alarmInterval) return;
-  console.log('ALARM: Starting alarm loop');
   playAlarmBeep();
-  alarmInterval = setInterval(playAlarmBeep, 5000);
+  alarmInterval = setInterval(playAlarmBeep, 4000);
 }
 
 export function stopAlarmLoop() {
   if (alarmInterval) {
-    console.log('ALARM: Stopping alarm loop');
     clearInterval(alarmInterval);
     alarmInterval = null;
   }
 }
 
-// Unlock audio on first user interaction (browser requirement)
-function unlock() {
-  if (audioReady) return;
-  console.log('ALARM: Unlocking audio via user gesture');
+// Unlock audio on ANY user interaction — this is the key to making it work
+function tryUnlock() {
+  if (unlocked) return;
   try {
-    const audio = ensureAudio();
-    audio.volume = 0.01;
-    audio.play().then(() => {
-      audio.pause();
-      audio.currentTime = 0;
-      audio.volume = 0.8;
-      audioReady = true;
-      console.log('ALARM: Audio unlocked successfully');
-    }).catch(() => {});
-  } catch (e) {}
-
-  // Also unlock Web Audio API
+    const a = getAudio();
+    // Play a tiny silent moment to unlock
+    const origVol = a.volume;
+    a.volume = 0.001;
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && p.then) {
+      p.then(() => { a.pause(); a.volume = origVol; a.currentTime = 0; unlocked = true; }).catch(() => {});
+    }
+  } catch {}
+  // Also unlock Web Audio
   try {
     if (!alarmCtx) alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (alarmCtx.state === 'suspended') alarmCtx.resume();
-  } catch (e) {}
+  } catch {}
 }
 
+// Attach to ALL interaction events, keep trying until unlocked
 if (typeof document !== 'undefined') {
-  ['click', 'keydown', 'touchstart', 'mousedown'].forEach((evt) => {
-    document.addEventListener(evt, unlock, { once: false, capture: true });
-  });
-  // Also try to unlock after a short delay (some browsers allow it)
-  setTimeout(() => unlock(), 1000);
+  const events = ['click','keydown','keyup','mousedown','mouseup','touchstart','touchend','pointerdown','scroll'];
+  const handler = () => {
+    tryUnlock();
+    if (unlocked) {
+      events.forEach(e => document.removeEventListener(e, handler, true));
+    }
+  };
+  events.forEach(e => document.addEventListener(e, handler, { capture: true, passive: true }));
+  // Also try after page load
+  window.addEventListener('load', () => setTimeout(tryUnlock, 500));
 }

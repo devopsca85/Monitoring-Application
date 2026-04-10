@@ -45,9 +45,9 @@ export const getDashboardStats = () => api.get('/monitoring/dashboard');
 export const getResults = (siteId, limit = 50) =>
   api.get(`/monitoring/results/${siteId}?limit=${limit}`);
 export const getAlerts = (resolved = false) =>
-  api.get(`/monitoring/alerts?resolved=${resolved}`);
+  api.get(`/monitoring/alerts-raw?resolved=${resolved}`);
 export const resolveAlert = (id) => api.post(`/monitoring/alerts/${id}/resolve`);
-export const getAlertHistory = (limit = 50) => api.get(`/monitoring/alert-history?limit=${limit}`);
+export const getAlertHistory = (limit = 100) => api.get(`/monitoring/alert-history-raw?limit=${limit}`);
 export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`);
 export const getSitesStatus = () => api.get('/monitoring/sites-status');
 
