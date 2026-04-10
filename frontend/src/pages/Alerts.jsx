@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getAlerts, resolveAlert } from '../services/api';
+import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus } from '../services/api';
 
 function formatCST(dateStr) {
   if (!dateStr) return '-';
@@ -27,100 +27,113 @@ function formatDuration(startStr, endStr) {
 }
 
 export default function Alerts() {
-  const [alerts, setAlerts] = useState([]);
-  const [filter, setFilter] = useState('active'); // active, resolved, all
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [sites, setSites] = useState([]);
+  const [tab, setTab] = useState('active');
   const [loading, setLoading] = useState(true);
 
   const load = () => {
-    setLoading(true);
-    if (filter === 'all') {
-      Promise.all([
-        getAlerts(false).then((r) => r.data).catch((e) => { console.error('Fetch active alerts failed:', e); return []; }),
-        getAlerts(true).then((r) => r.data).catch((e) => { console.error('Fetch resolved alerts failed:', e); return []; }),
-      ]).then(([active, resolved]) => {
-        const merged = [...active, ...resolved].sort(
-          (a, b) => new Date(b.created_at) - new Date(a.created_at)
-        );
-        setAlerts(merged);
-      }).finally(() => setLoading(false));
-    } else {
-      getAlerts(filter === 'resolved')
-        .then((r) => setAlerts(r.data))
-        .catch((e) => { console.error('Fetch alerts failed:', e); setAlerts([]); })
-        .finally(() => setLoading(false));
-    }
+    Promise.all([
+      getAlerts(false).then((r) => setActiveAlerts(r.data || [])).catch((e) => { console.error('Active alerts:', e); setActiveAlerts([]); }),
+      getAlertHistory(100).then((r) => setHistory(r.data || [])).catch((e) => { console.error('Alert history:', e); setHistory([]); }),
+      getSitesStatus().then((r) => setSites(r.data || [])).catch((e) => { console.error('Sites status:', e); setSites([]); }),
+    ]).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [filter]);
-
-  // Auto-refresh every 15 seconds
+  useEffect(() => { load(); }, []);
   useEffect(() => {
-    const id = setInterval(() => {
-      if (filter === 'all') {
-        Promise.all([
-          getAlerts(false).then((r) => r.data).catch(() => []),
-          getAlerts(true).then((r) => r.data).catch(() => []),
-        ]).then(([active, resolved]) => {
-          setAlerts([...active, ...resolved].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-        });
-      } else {
-        getAlerts(filter === 'resolved').then((r) => setAlerts(r.data)).catch(() => {});
-      }
-    }, 15000);
+    const id = setInterval(load, 15000);
     return () => clearInterval(id);
-  }, [filter]);
+  }, []);
 
   const handleResolve = async (id) => {
     await resolveAlert(id);
     load();
   };
 
-  const activeCount = alerts.filter((a) => !a.resolved).length;
-  const resolvedCount = alerts.filter((a) => a.resolved).length;
+  const resolvedAlerts = history.filter((a) => a.resolved);
+  const criticalSites = sites.filter((s) => s.last_status === 'critical');
+  const warningSites = sites.filter((s) => s.last_status === 'warning');
+  const slowSites = sites.filter((s) => s.is_slow);
+
+  const tabData = tab === 'active' ? activeAlerts : tab === 'resolved' ? resolvedAlerts : history;
 
   return (
     <div>
       <div className="page-header">
-        <h2>Alert Log</h2>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {[
-            { key: 'active', label: 'Active' },
-            { key: 'resolved', label: 'Resolved' },
-            { key: 'all', label: 'All' },
-          ].map((f) => (
-            <button
-              key={f.key}
-              className={`btn ${filter === f.key ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setFilter(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <h2>Alerts & Monitoring Status</h2>
+        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Auto-refreshes every 15s | Times in CST</span>
       </div>
 
-      {/* Summary stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '20px' }}>
-        <div className="stat-card critical">
-          <div className="stat-value">{filter === 'resolved' ? 0 : activeCount}</div>
+      {/* Summary Cards */}
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: '20px' }}>
+        <div className={`stat-card ${activeAlerts.length > 0 ? 'critical' : 'ok'}`}>
+          <div className="stat-value">{activeAlerts.length}</div>
           <div className="stat-label">Active Alerts</div>
         </div>
+        <div className="stat-card critical">
+          <div className="stat-value">{criticalSites.length}</div>
+          <div className="stat-label">Sites Down</div>
+        </div>
+        <div className="stat-card warning">
+          <div className="stat-value">{warningSites.length + slowSites.length}</div>
+          <div className="stat-label">Warnings / Slow</div>
+        </div>
         <div className="stat-card ok">
-          <div className="stat-value">{filter === 'active' ? 0 : resolvedCount}</div>
-          <div className="stat-label">Resolved</div>
+          <div className="stat-value">{resolvedAlerts.length}</div>
+          <div className="stat-label">Resolved (recent)</div>
         </div>
         <div className="stat-card info">
-          <div className="stat-value">{alerts.length}</div>
-          <div className="stat-label">Total Shown</div>
+          <div className="stat-value">{history.length}</div>
+          <div className="stat-label">Total Events</div>
         </div>
       </div>
 
+      {/* Current Site Health — always visible */}
+      {(criticalSites.length > 0 || slowSites.length > 0) && (
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <div className="card-header"><h3>Current Issues</h3></div>
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr><th>Site</th><th>Status</th><th>Response</th><th>Last Check</th><th>Issue</th></tr>
+              </thead>
+              <tbody>
+                {[...criticalSites, ...slowSites].map((s) => (
+                  <tr key={s.id} style={{ background: s.last_status === 'critical' ? 'rgba(229,62,62,0.03)' : 'rgba(221,107,32,0.03)' }}>
+                    <td><Link to={`/sites/${s.id}`} style={{ fontWeight: 500 }}>{s.name}</Link></td>
+                    <td><span className={`badge badge-${s.last_status || 'warning'}`}>{s.last_status || 'slow'}</span></td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{s.last_response_time_ms ? `${Math.round(s.last_response_time_ms)}ms` : '-'}</td>
+                    <td style={{ fontSize: '12px' }}>{formatCST(s.last_checked_at)}</td>
+                    <td style={{ fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.last_error || (s.is_slow ? `Slow (>${s.slow_threshold_ms}ms)` : 'Down')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Buttons */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        {[
+          { key: 'active', label: `Active (${activeAlerts.length})` },
+          { key: 'resolved', label: `Resolved (${resolvedAlerts.length})` },
+          { key: 'all', label: `All History (${history.length})` },
+        ].map((t) => (
+          <button key={t.key} className={`btn ${tab === t.key ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab(t.key)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Alert Table */}
       <div className="card">
         <div className="card-header">
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            Alert Timeline
-          </h3>
-          <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>All times in CST</span>
+          <h3>Alert Log</h3>
         </div>
         <div className="table-container">
           <table>
@@ -129,16 +142,16 @@ export default function Alerts() {
                 <th>Site</th>
                 <th>Severity</th>
                 <th>Message</th>
-                <th>Alert Triggered (CST)</th>
-                <th>Resolved At (CST)</th>
+                <th>Triggered (CST)</th>
+                <th>Resolved (CST)</th>
                 <th>Duration</th>
                 <th>Status</th>
-                {filter !== 'resolved' && <th>Action</th>}
+                {tab !== 'resolved' && <th>Action</th>}
               </tr>
             </thead>
             <tbody>
-              {alerts.map((alert) => (
-                <tr key={alert.id} style={{
+              {tabData.map((alert) => (
+                <tr key={`${alert.id}-${alert.resolved}`} style={{
                   background: !alert.resolved ? 'rgba(229, 62, 62, 0.03)' : undefined,
                 }}>
                   <td>
@@ -152,11 +165,11 @@ export default function Alerts() {
                     )}
                   </td>
                   <td>
-                    <span className={`badge badge-${alert.alert_type}`}>
-                      {alert.alert_type}
+                    <span className={`badge badge-${alert.alert_type || 'critical'}`}>
+                      {alert.alert_type || 'critical'}
                     </span>
                   </td>
-                  <td style={{ maxWidth: '300px', fontSize: '13px' }}>
+                  <td style={{ maxWidth: '280px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {alert.message || '-'}
                   </td>
                   <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
@@ -182,14 +195,10 @@ export default function Alerts() {
                       <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Active</span>
                     )}
                   </td>
-                  {filter !== 'resolved' && (
+                  {tab !== 'resolved' && (
                     <td>
                       {!alert.resolved && (
-                        <button
-                          onClick={() => handleResolve(alert.id)}
-                          className="btn btn-primary"
-                          style={{ padding: '4px 12px', fontSize: '12px' }}
-                        >
+                        <button onClick={() => handleResolve(alert.id)} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>
                           Resolve
                         </button>
                       )}
@@ -197,10 +206,16 @@ export default function Alerts() {
                   )}
                 </tr>
               ))}
-              {alerts.length === 0 && !loading && (
+              {tabData.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={filter !== 'resolved' ? 8 : 7} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
-                    {filter === 'active' ? 'No active alerts' : filter === 'resolved' ? 'No resolved alerts' : 'No alerts recorded'}
+                  <td colSpan={tab !== 'resolved' ? 8 : 7} style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-secondary)' }}>
+                    {tab === 'active' ? (
+                      <div>
+                        <div style={{ fontSize: '24px', marginBottom: '8px', color: 'var(--color-status-ok)' }}>&#10003;</div>
+                        <div style={{ fontWeight: 500, marginBottom: '4px' }}>All Clear</div>
+                        <div>No active alerts — all monitored sites are running normally.</div>
+                      </div>
+                    ) : tab === 'resolved' ? 'No resolved alerts in recent history' : 'No alerts recorded yet'}
                   </td>
                 </tr>
               )}
