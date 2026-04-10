@@ -140,13 +140,54 @@ def get_alert_history(
     return result
 
 
+def _cleanup_orphaned_alerts(db: Session):
+    """Auto-resolve alerts whose site no longer exists."""
+    from datetime import datetime, timezone
+    valid_site_ids = {s.id for s in db.query(Site.id).all()}
+    orphaned = (
+        db.query(Alert)
+        .filter(Alert.resolved == False)
+        .all()
+    )
+    cleaned = 0
+    for a in orphaned:
+        if a.site_id not in valid_site_ids:
+            a.resolved = True
+            a.resolved_at = datetime.now(timezone.utc)
+            a.message = (a.message or "") + " [Auto-resolved: site deleted]"
+            cleaned += 1
+    if cleaned:
+        db.commit()
+        import logging
+        logging.getLogger(__name__).info(f"Cleaned up {cleaned} orphaned alerts")
+
+
+def _format_alert(a, sites_map):
+    """Format an alert record as a plain dict."""
+    s = sites_map.get(a.site_id)
+    return {
+        "id": a.id,
+        "site_id": a.site_id,
+        "site_name": s.name if s else f"(Deleted Site #{a.site_id})",
+        "site_url": s.url if s else "",
+        "alert_type": a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else str(a.alert_type or "critical"),
+        "message": a.message or "",
+        "notified": bool(a.notified or False),
+        "resolved": bool(a.resolved or False),
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+    }
+
+
 @router.get("/alerts-raw")
 def get_alerts_raw(
     resolved: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Fallback: returns alerts as plain dicts — no Pydantic serialization."""
+    """Returns alerts as plain dicts. Auto-cleans orphaned alerts."""
+    _cleanup_orphaned_alerts(db)
+
     alerts = (
         db.query(Alert)
         .filter(Alert.resolved == resolved)
@@ -154,24 +195,15 @@ def get_alerts_raw(
         .limit(100)
         .all()
     )
+
+    # Only return alerts that have a valid site
+    valid_site_ids = {s.id for s in db.query(Site.id).all()}
+    alerts = [a for a in alerts if a.site_id in valid_site_ids]
+
     site_ids = {a.site_id for a in alerts}
     sites_map = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()} if site_ids else {}
 
-    return [
-        {
-            "id": a.id,
-            "site_id": a.site_id,
-            "site_name": sites_map[a.site_id].name if a.site_id in sites_map else f"Site #{a.site_id}",
-            "site_url": sites_map[a.site_id].url if a.site_id in sites_map else "",
-            "alert_type": a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else str(a.alert_type or "critical"),
-            "message": a.message or "",
-            "notified": bool(a.notified or False),
-            "resolved": bool(a.resolved or False),
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-            "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
-        }
-        for a in alerts
-    ]
+    return [_format_alert(a, sites_map) for a in alerts]
 
 
 @router.get("/alert-history-raw")
@@ -180,26 +212,13 @@ def get_alert_history_raw(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Fallback: returns all alert history as plain dicts."""
+    """Returns all alert history as plain dicts. Filters out deleted sites."""
     alerts = db.query(Alert).order_by(Alert.created_at.desc()).limit(limit).all()
+    valid_site_ids = {s.id for s in db.query(Site.id).all()}
+    alerts = [a for a in alerts if a.site_id in valid_site_ids]
     site_ids = {a.site_id for a in alerts}
     sites_map = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()} if site_ids else {}
-
-    return [
-        {
-            "id": a.id,
-            "site_id": a.site_id,
-            "site_name": sites_map[a.site_id].name if a.site_id in sites_map else f"Site #{a.site_id}",
-            "site_url": sites_map[a.site_id].url if a.site_id in sites_map else "",
-            "alert_type": a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else str(a.alert_type or "critical"),
-            "message": a.message or "",
-            "notified": bool(a.notified or False),
-            "resolved": bool(a.resolved or False),
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-            "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
-        }
-        for a in alerts
-    ]
+    return [_format_alert(a, sites_map) for a in alerts]
 
 
 @router.get("/alerts/debug")
