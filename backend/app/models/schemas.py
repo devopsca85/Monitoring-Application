@@ -143,12 +143,12 @@ class MonitoringResultResponse(BaseModel):
 class AlertResponse(BaseModel):
     id: int
     site_id: int
-    alert_type: AlertStatus
-    message: str | None
-    notified: bool
-    resolved: bool
-    created_at: datetime | None
-    resolved_at: datetime | None
+    alert_type: AlertStatus | None = None
+    message: str | None = None
+    notified: bool = False
+    resolved: bool = False
+    created_at: datetime | None = None
+    resolved_at: datetime | None = None
     model_config = {"from_attributes": True}
 
 
@@ -157,12 +157,12 @@ class AlertDetailResponse(BaseModel):
     site_id: int
     site_name: str
     site_url: str
-    alert_type: AlertStatus
-    message: str | None
-    notified: bool
-    resolved: bool
-    created_at: datetime | None
-    resolved_at: datetime | None
+    alert_type: AlertStatus | None = None
+    message: str | None = None
+    notified: bool = False
+    resolved: bool = False
+    created_at: datetime | None = None
+    resolved_at: datetime | None = None
 
 
 # --- Dashboard ---

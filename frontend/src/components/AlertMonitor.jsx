@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAlerts } from '../services/api';
 import { playAlarmBeep, startAlarmLoop, stopAlarmLoop } from '../services/alarm';
@@ -15,53 +15,70 @@ export default function AlertMonitor() {
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [alarmAcknowledged, setAlarmAcknowledged] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const knownAlertIds = useRef(new Set());
-  const isFirstLoad = useRef(true);
+  const knownAlertIds = useRef(null); // null = not yet loaded
   const navigate = useNavigate();
 
-  const addToast = (title, message, type = 'critical') => {
+  const addToast = useCallback((title, message, type = 'critical') => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev.slice(-4), { id, title, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 8000);
-  };
+  }, []);
 
-  // Poll for alerts every 15 seconds — runs globally regardless of current page
+  // Poll for alerts every 10 seconds — runs globally
   useEffect(() => {
     const poll = () => {
       getAlerts(false).then((r) => {
-        const alerts = r.data;
+        const alerts = r.data || [];
         setActiveAlerts(alerts);
 
-        // Detect new alerts
-        if (!isFirstLoad.current) {
-          for (const a of alerts) {
-            if (!knownAlertIds.current.has(a.id)) {
+        const currentIds = new Set(alerts.map((a) => a.id));
+        const previousIds = knownAlertIds.current;
+
+        if (previousIds === null) {
+          // FIRST LOAD — if alerts already exist, fire alarm immediately
+          if (alerts.length > 0) {
+            console.log(`AlertMonitor: ${alerts.length} active alerts on load — starting alarm`);
+            playAlarmBeep();
+            setAlarmAcknowledged(false);
+            for (const a of alerts) {
               const name = a.site_name || `Site #${a.site_id}`;
+              addToast(`Alert: ${name}`, a.message || 'Site is down', a.alert_type || 'critical');
+            }
+          }
+        } else {
+          // SUBSEQUENT LOADS — detect new alerts
+          for (const a of alerts) {
+            if (!previousIds.has(a.id)) {
+              const name = a.site_name || `Site #${a.site_id}`;
+              console.log(`AlertMonitor: NEW alert — ${name}`);
               addToast(`Alert: ${name}`, a.message || 'Monitoring alert triggered', a.alert_type || 'critical');
               playAlarmBeep();
               setAlarmAcknowledged(false);
             }
           }
+
+          // Detect resolved
+          if (alerts.length === 0 && previousIds.size > 0) {
+            console.log('AlertMonitor: All alerts resolved');
+            addToast('All Clear', 'All sites are back online', 'ok');
+          }
         }
 
-        // Check if all alerts resolved
-        if (alerts.length === 0 && knownAlertIds.current.size > 0 && !isFirstLoad.current) {
-          addToast('All Clear', 'All sites are back online', 'ok');
-        }
-
-        knownAlertIds.current = new Set(alerts.map((a) => a.id));
-        isFirstLoad.current = false;
-      }).catch(() => {});
+        knownAlertIds.current = currentIds;
+      }).catch((e) => {
+        console.error('AlertMonitor: Failed to fetch alerts:', e);
+      });
     };
 
     poll();
-    const id = setInterval(poll, 15000);
+    const id = setInterval(poll, 10000);
     return () => clearInterval(id);
-  }, []);
+  }, [addToast]);
 
-  // Alarm loop control
+  // Alarm loop control — start/stop based on active alerts
   useEffect(() => {
     if (activeAlerts.length > 0 && !alarmAcknowledged) {
+      console.log('AlertMonitor: Starting alarm loop');
       startAlarmLoop();
     } else {
       stopAlarmLoop();
@@ -71,7 +88,7 @@ export default function AlertMonitor() {
 
   return (
     <>
-      {/* Alarm banner — shows on ALL pages when sites are down */}
+      {/* Alarm banner — visible on ALL pages */}
       {activeAlerts.length > 0 && (
         <div style={{
           background: 'linear-gradient(90deg, #e53e3e, #c53030)',
@@ -122,7 +139,7 @@ export default function AlertMonitor() {
         </div>
       )}
 
-      {/* Toast notifications — top right, visible on ALL pages */}
+      {/* Toast notifications — top right corner, all pages */}
       <div style={{
         position: 'fixed', top: 70, right: 24, zIndex: 9999,
         display: 'flex', flexDirection: 'column', gap: '10px',
