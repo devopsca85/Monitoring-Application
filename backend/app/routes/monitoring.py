@@ -275,23 +275,51 @@ async def acknowledge_alerts(
     valid_site_ids = {s.id for s in db.query(Site.id).all()}
     sites_map = {s.id: s for s in db.query(Site).all()}
 
-    site_names = []
-    for a in active:
-        if a.site_id in valid_site_ids:
-            s = sites_map.get(a.site_id)
-            site_names.append(s.name if s else f"Site #{a.site_id}")
+    # Separate critical vs warning — alarm only fires for critical
+    critical_names = []
+    warning_names = []
+    seen_critical = set()
+    seen_warning = set()
 
-    if not site_names:
+    for a in active:
+        if a.site_id not in valid_site_ids:
+            continue
+        s = sites_map.get(a.site_id)
+        name = s.name if s else f"Site #{a.site_id}"
+        is_critical = (a.alert_type == AlertStatus.CRITICAL or a.alert_type is None
+                       or (hasattr(a.alert_type, 'value') and a.alert_type.value == 'critical'))
+
+        if is_critical and a.site_id not in seen_critical:
+            critical_names.append(name)
+            seen_critical.add(a.site_id)
+        elif not is_critical and a.site_id not in seen_warning:
+            warning_names.append(name)
+            seen_warning.add(a.site_id)
+
+    if not critical_names and not warning_names:
         return {"status": "No active alerts to acknowledge"}
+
+    parts = []
+    if critical_names:
+        parts.append(f"**Down:** {', '.join(critical_names)}")
+    if warning_names:
+        parts.append(f"**Slow/Warning:** {', '.join(warning_names)}")
 
     msg = (
         f"**Alert Acknowledged** by **{user.full_name or user.email}**\n\n"
-        f"Affected sites: {', '.join(site_names)}\n\n"
+        f"{chr(10).join(parts)}\n\n"
         f"The team is aware and actively investigating."
     )
 
+    total = len(critical_names) + len(warning_names)
+    title_parts = []
+    if critical_names:
+        title_parts.append(f"{len(critical_names)} down")
+    if warning_names:
+        title_parts.append(f"{len(warning_names)} slow")
+
     await send_teams_alert(
-        title=f"Alert Acknowledged — {len(site_names)} site(s)",
+        title=f"Alert Acknowledged — {', '.join(title_parts)}",
         message=msg,
         color="007AFF",
     )

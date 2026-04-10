@@ -5,7 +5,7 @@ export default function Metrics() {
       icon: '\u2191',
       color: '#007aff',
       items: [
-        { label: 'Method', value: 'Headless browser (Playwright) loads the full page' },
+        { label: 'Method', value: 'Headless Chromium browser (Playwright) loads the full page' },
         { label: 'Measures', value: 'Page load time (domcontentloaded)' },
         { label: 'HTTP 404', value: 'Instant CRITICAL alert' },
         { label: 'HTTP 5XX', value: 'Instant CRITICAL alert (500, 501, 502, 503, 504)' },
@@ -19,25 +19,30 @@ export default function Metrics() {
       icon: '\uD83D\uDD12',
       color: '#13612e',
       items: [
-        { label: 'Method', value: 'Headless browser fills username/password, clicks submit, waits for redirect' },
-        { label: 'Login Failed Detection', value: 'Password field still visible after submit = CRITICAL' },
-        { label: 'Error Message Detection', value: 'Scans for "invalid", "incorrect", "failed", "denied" text on page' },
-        { label: 'Error Element Detection', value: 'Checks .error, .alert-danger, [role=alert], red span elements' },
-        { label: 'Expected Page Check', value: 'Verifies URL contains the expected page (default: mainpage.aspx)' },
-        { label: 'CSS Selector Check', value: 'If success indicator is set, verifies element exists in DOM' },
-        { label: 'Fallback', value: 'If CSS selector not found but expected page is in URL = OK' },
-        { label: 'SSO Backdoor', value: 'Use the direct login URL for sites with SSO (bypasses SSO flow)' },
+        { label: 'Method', value: 'Fills username/password, clicks submit, waits for page load + network idle' },
+        { label: 'Password Field Check', value: 'If password input still visible after submit = CRITICAL (strongest signal)' },
+        { label: 'Error Detection', value: 'Scans for .error, .alert-danger, [role=alert], red spans, and error keywords' },
+        { label: 'Error Keywords', value: '"invalid", "incorrect", "failed", "denied", "wrong password", "try again", "account locked"' },
+        { label: 'Expected Page', value: 'Verifies URL contains expected page after login (default: mainpage.aspx)' },
+        { label: 'CSS Selector', value: 'If set, verifies element exists in DOM. Auto-prefixes # for IDs' },
+        { label: 'Post-Login Fallback', value: 'If CSS selector not found but URL has mainpage.aspx = OK' },
+        { label: 'SSO Backdoor', value: 'Use direct login URL for SSO sites (bypasses SSO flow)' },
+        { label: 'Response Time', value: 'Measures submit-to-page-load only (excludes JS rendering buffer)' },
       ],
     },
     {
-      title: 'Multi-Page Validation',
+      title: 'Subpage Validation',
       icon: '\uD83D\uDCC4',
       color: '#6b46c1',
       items: [
-        { label: 'Method', value: 'Login first, then navigate each configured subpage in order' },
-        { label: 'Element Check', value: 'Expected CSS element must exist on each page' },
-        { label: 'Text Check', value: 'Expected text must be present in page content' },
-        { label: 'Per-Page Status', value: 'Each subpage gets its own OK/WARNING/CRITICAL status' },
+        { label: 'Method', value: 'After login, navigates each configured subpage in sort order' },
+        { label: 'HTTP Status', value: 'Fails immediately on 4XX/5XX responses' },
+        { label: 'Login Redirect', value: 'Detects if page redirected to login/signin/auth = CRITICAL (session expired)' },
+        { label: 'Error Page', value: 'Detects if URL contains "error", "404", "not-found" = CRITICAL' },
+        { label: 'URL Path Match', value: 'Compares expected path vs actual path — warns on mismatch (catches SPA wrong routes)' },
+        { label: 'CSS Selector', value: 'Must exist in DOM (auto-prefixes # for IDs). Fails = CRITICAL' },
+        { label: 'Expected Text', value: 'Text must be in page content. Missing = WARNING' },
+        { label: 'Empty Page Check', value: 'If no CSS/text set and body has <50 chars = WARNING (likely error page)' },
         { label: 'Overall Status', value: 'Worst subpage status becomes the overall result' },
       ],
     },
@@ -49,11 +54,16 @@ export default function Metrics() {
       icon: '\u23F1',
       color: '#dd6b20',
       items: [
-        { label: 'Threshold', value: 'Configurable per site (default: 10000ms / 10 seconds)' },
-        { label: 'Options', value: '2s, 3s, 5s, 8s (default), 10s, 15s, 20s, 30s' },
+        { label: 'Default Threshold', value: '10,000ms (10 seconds)' },
+        { label: 'Options', value: '2s, 3s, 5s, 8s, 10s (default), 15s, 20s, 30s' },
         { label: 'Alert Level', value: 'WARNING — site is up but slow' },
-        { label: 'Measurement', value: 'Time from form submit to page load + network idle (excludes JS rendering buffer)' },
+        { label: 'Sustained Check', value: 'Alert only if ALL checks in the past 15 minutes exceed threshold' },
+        { label: 'Minimum Data', value: 'Requires at least 2 data points before alerting' },
+        { label: 'Cooldown', value: '3 hours between slow alerts per site (no repeated emails/Teams)' },
+        { label: 'Consolidated Alert', value: 'One email/Teams for ALL slow sites together (not per-site)' },
+        { label: 'Measurement', value: 'Submit-to-page-load + network idle (excludes JS buffer waits)' },
         { label: 'Recovery', value: 'Auto-resolves when response drops below threshold' },
+        { label: 'Dashboard Analysis', value: 'Shows slow periods >60 min with hourly charts in CST' },
       ],
     },
     {
@@ -61,12 +71,13 @@ export default function Metrics() {
       icon: '\uD83D\uDD14',
       color: '#e53e3e',
       items: [
-        { label: 'HTTP 404 / 5XX', value: 'Instant alert on first occurrence (no waiting)' },
-        { label: 'Login Failure', value: 'Instant alert when wrong credentials or login form still showing' },
-        { label: 'Slowness', value: 'WARNING alert when response exceeds threshold' },
-        { label: 'Subpage Failure', value: 'CRITICAL if expected element missing, WARNING if expected text missing' },
-        { label: 'Recovery', value: 'Instant OK alert + auto-resolve when site comes back' },
+        { label: 'HTTP 404 / 5XX', value: 'Instant CRITICAL alert on first occurrence' },
+        { label: 'Login Failure', value: 'Instant CRITICAL when password field visible or error detected' },
+        { label: 'Subpage Failure', value: 'CRITICAL if element missing or redirected to login/error page' },
+        { label: 'Slowness', value: 'WARNING after 15 min sustained, consolidated, 3-hour cooldown' },
+        { label: 'Recovery', value: 'Instant OK notification + auto-resolve when site comes back' },
         { label: 'Duplicate Prevention', value: 'One active alert per site — new failures update existing alert' },
+        { label: 'Orphan Cleanup', value: 'Alerts for deleted sites auto-resolve and are hidden from UI' },
       ],
     },
     {
@@ -74,11 +85,16 @@ export default function Metrics() {
       icon: '\uD83D\uDCE7',
       color: '#007aff',
       items: [
-        { label: 'Email (SMTP)', value: 'Configurable in Admin > Settings — sent to site notification emails' },
-        { label: 'MS Teams', value: 'Global webhook — always fires if configured, regardless of site channel' },
-        { label: 'Dashboard Alarm', value: 'Sound alarm + red banner + toast popup when admin is on dashboard' },
-        { label: 'Admin Notifications', value: 'All admins notified when sites are added or removed' },
-        { label: 'Recovery Email', value: 'Green-themed email when site comes back online' },
+        { label: 'Email (SMTP)', value: 'Configurable in Admin > Settings — sent to per-site notification emails' },
+        { label: 'MS Teams', value: 'Global webhook — fires if configured and enabled. ON/OFF toggle in settings' },
+        { label: 'Teams Acknowledge', value: 'When alarm is silenced, Teams gets "Alert Acknowledged by [name]" message' },
+        { label: 'Dashboard Alarm', value: 'Audio alarm + red/orange banner + toast popups on all pages' },
+        { label: 'Alarm Audio', value: 'Upload custom MP3/WAV/OGG in Admin > Settings, or uses default generated tone' },
+        { label: 'Critical Only Sound', value: 'Audio alarm plays only for CRITICAL (down) — not for warnings (slow)' },
+        { label: 'Warning Banner', value: 'Orange banner for slow sites — auto-hides after 30 seconds' },
+        { label: 'Toast Popups', value: 'Slide-in notifications, auto-dismiss after 5 seconds' },
+        { label: 'Admin Notifications', value: 'All admins emailed when sites are added or removed' },
+        { label: 'Recovery Email', value: 'Green-themed email/Teams when site comes back online' },
       ],
     },
   ];
@@ -89,11 +105,13 @@ export default function Metrics() {
       icon: '\u23F0',
       color: '#38a169',
       items: [
-        { label: 'Scheduler', value: 'Built-in background scheduler (runs inside the backend)' },
-        { label: 'Tick Interval', value: 'Every 15 seconds the scheduler checks which sites are due' },
+        { label: 'Scheduler', value: 'Built-in async background task inside the FastAPI backend' },
+        { label: 'Tick Interval', value: 'Every 15 seconds checks which sites are due' },
         { label: 'Check Intervals', value: '1 min, 3 min, 5 min, 10 min, 15 min, 30 min, 60 min' },
         { label: 'Manual Trigger', value: '"Run Check Now" button on site detail page' },
-        { label: 'Dashboard Refresh', value: 'Auto-refresh every 15 seconds with live countdown' },
+        { label: 'Dashboard Refresh', value: 'Auto-refresh every 15 seconds with live countdown timer' },
+        { label: 'Next Check Timer', value: 'Live per-site countdown on the dashboard' },
+        { label: 'Alert Polling', value: 'AlertMonitor polls every 10 seconds (global, all pages)' },
       ],
     },
     {
@@ -104,23 +122,43 @@ export default function Metrics() {
         { label: 'Uptime Check', value: 'Time from navigation start to domcontentloaded' },
         { label: 'Login Check', value: 'Time from submit click to page load + network idle' },
         { label: 'Excludes', value: 'JS rendering buffer (2s) and indicator retry waits are NOT counted' },
-        { label: 'Subpage Time', value: 'Each subpage measured independently from navigation to load' },
+        { label: 'Subpage Time', value: 'Each subpage measured independently (navigation to load + 2s buffer)' },
         { label: 'Browser', value: 'Chromium headless via Playwright (same engine as Chrome)' },
+        { label: 'Dashboard Chart', value: 'Hourly bar chart for slow sites showing avg/max over 24h in CST' },
       ],
     },
     {
-      title: 'Security',
+      title: 'Security & Auth',
       icon: '\uD83D\uDD10',
       color: '#001e3f',
       items: [
         { label: 'Site Credentials', value: 'Fernet AES-128 encrypted at rest (username + password)' },
         { label: 'SMTP Password', value: 'Fernet AES-128 encrypted in system_settings table' },
         { label: 'Teams Webhook', value: 'Fernet AES-128 encrypted in system_settings table' },
+        { label: 'Azure SSO Secret', value: 'Fernet AES-128 encrypted in system_settings table' },
         { label: 'User Passwords', value: 'bcrypt hashed (one-way, cannot be decrypted)' },
         { label: 'API Auth', value: 'JWT Bearer tokens with configurable expiry' },
+        { label: 'Azure SSO', value: 'Optional Entra ID integration with group-based admin/user role mapping' },
         { label: 'Registration', value: 'Locked after first user — only admins can create accounts' },
+        { label: 'Profile', value: 'Users can change name, email, password. Cannot change own admin status' },
       ],
     },
+  ];
+
+  const defaults = [
+    { setting: 'Slow Response Threshold', value: '10,000ms (10 seconds)', where: 'Per site, configurable' },
+    { setting: 'Sustained Slowness Period', value: '15 minutes', where: 'Before sending alert' },
+    { setting: 'Slow Alert Cooldown', value: '3 hours', where: 'Between repeated slow alerts per site' },
+    { setting: 'Slowness Dashboard Threshold', value: '60 minutes', where: 'Show in dashboard analysis chart' },
+    { setting: 'Expected Post-Login Page', value: 'mainpage.aspx', where: 'Per site, configurable' },
+    { setting: 'Browser Timeout', value: '30 seconds', where: 'Page load timeout' },
+    { setting: 'Scheduler Tick', value: '15 seconds', where: 'How often scheduler checks for due sites' },
+    { setting: 'Alert Poll Interval', value: '10 seconds', where: 'Frontend checks for new alerts' },
+    { setting: 'Dashboard Refresh', value: '15 seconds', where: 'Auto-refresh all dashboard data' },
+    { setting: 'Toast Auto-Dismiss', value: '5 seconds', where: 'Popup notifications' },
+    { setting: 'Warning Banner Auto-Hide', value: '30 seconds', where: 'Orange slow/warning banner' },
+    { setting: 'Alarm Repeat', value: '4 seconds', where: 'Sound beep interval during critical alerts' },
+    { setting: 'Check Interval Default', value: '5 minutes', where: 'New site default' },
   ];
 
   const renderSection = (title, groups) => (
@@ -170,8 +208,9 @@ export default function Metrics() {
         <p style={{ fontSize: '13px', opacity: 0.85, lineHeight: 1.7 }}>
           The monitoring engine uses a <strong>headless Chromium browser (Playwright)</strong> to perform real user simulations.
           For each configured site, it loads the page, fills login forms, clicks buttons, and navigates subpages — exactly like a real user would.
-          Response times measure <strong>actual page load speed</strong>, not just HTTP pings.
-          Alerts fire instantly on failures and auto-resolve on recovery.
+          Response times measure <strong>actual page load speed</strong> (submit to network idle), not just HTTP pings.
+          Alerts fire instantly on failures. Slowness alerts require <strong>15 minutes sustained</strong> and are sent as a <strong>single consolidated email/Teams</strong> with a <strong>3-hour cooldown</strong>.
+          Recovery alerts fire instantly when sites come back online.
         </p>
       </div>
 
@@ -179,13 +218,35 @@ export default function Metrics() {
       {renderSection('Thresholds & Alerts', thresholds)}
       {renderSection('Scheduling & Security', timing)}
 
-      <div className="card" style={{ marginTop: '8px' }}>
+      {/* Default Values Table */}
+      <div className="card" style={{ marginBottom: '24px' }}>
+        <div className="card-header"><h3>Default Values</h3></div>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr><th>Setting</th><th>Default Value</th><th>Context</th></tr>
+            </thead>
+            <tbody>
+              {defaults.map((d, i) => (
+                <tr key={i}>
+                  <td style={{ fontWeight: 500, fontSize: '13px' }}>{d.setting}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums', fontSize: '13px', fontWeight: 600, color: 'var(--color-primary)' }}>{d.value}</td>
+                  <td style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{d.where}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Alert Status Reference */}
+      <div className="card">
         <h3 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '12px' }}>Alert Status Reference</h3>
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
           {[
-            { badge: 'ok', label: 'OK', desc: 'Site is up, fast, and all checks pass' },
-            { badge: 'warning', label: 'WARNING', desc: 'Site is up but slow (exceeds threshold) or minor issue' },
-            { badge: 'critical', label: 'CRITICAL', desc: 'Site is down, login failed, HTTP error, or page missing' },
+            { badge: 'ok', label: 'OK', desc: 'Site is up, fast, all checks pass' },
+            { badge: 'warning', label: 'WARNING', desc: 'Site slow (sustained >15min), text missing, URL mismatch, or minor issue' },
+            { badge: 'critical', label: 'CRITICAL', desc: 'Site down, login failed, HTTP 4XX/5XX, element missing, or redirect to error page' },
           ].map((s) => (
             <div key={s.badge} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span className={`badge badge-${s.badge}`} style={{ fontSize: '12px' }}>{s.label}</span>
