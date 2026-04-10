@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { getDashboardStats, getAlerts, getSitesStatus, getAlertHistory } from '../services/api';
+import { getDashboardStats, getAlerts, getSitesStatus, getAlertHistory, getSlownessAnalysis } from '../services/api';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 
 const PIE_COLORS = {
@@ -98,6 +99,7 @@ export default function Dashboard() {
   const [sitesStatus, setSitesStatus] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [alertHistory, setAlertHistory] = useState([]);
+  const [slowAnalysis, setSlowAnalysis] = useState([]);
   const [refreshIn, setRefreshIn] = useState(15);
   const nextRefreshAt = useRef(Date.now() + 15000);
 
@@ -107,6 +109,7 @@ export default function Dashboard() {
       getSitesStatus().then((r) => setSitesStatus(r.data)).catch((e) => console.error('Sites status error:', e)),
       getAlerts().then((r) => { setAlerts(r.data || []); }).catch((e) => { console.error('Alerts error:', e); setAlerts([]); }),
       getAlertHistory(30).then((r) => setAlertHistory(r.data || [])).catch((e) => { console.error('Alert history error:', e); setAlertHistory([]); }),
+      getSlownessAnalysis().then((r) => setSlowAnalysis(r.data || [])).catch(() => setSlowAnalysis([])),
     ]);
     nextRefreshAt.current = Date.now() + 15000;
     setRefreshIn(15);
@@ -280,6 +283,85 @@ export default function Dashboard() {
           </table>
         </div>
       </div>
+
+      {/* Slowness Analysis — sites slow >60min in last 24h */}
+      {slowAnalysis.length > 0 && (
+        <div className="card" style={{ marginTop: '20px' }}>
+          <div className="card-header">
+            <h3>Slowness Analysis (Last 24h)</h3>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Sites with slowness &gt;60 minutes | CST timezone</span>
+          </div>
+
+          {slowAnalysis.map((site) => (
+            <div key={site.site_id} style={{ marginBottom: '24px', borderBottom: '1px solid var(--color-border)', paddingBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <Link to={`/sites/${site.site_id}`} style={{ fontWeight: 600, fontSize: '15px' }}>{site.site_name}</Link>
+                <span className="badge badge-warning">
+                  {site.total_slow_minutes} min slow (threshold: {site.threshold_ms}ms)
+                </span>
+              </div>
+
+              {/* Hourly response time bar chart */}
+              {site.hourly_data && site.hourly_data.length > 0 && (
+                <div style={{ marginBottom: '12px' }}>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={site.hourly_data.map((d) => ({
+                      ...d,
+                      hour_cst: new Date(d.hour + ':00Z').toLocaleString('en-US', {
+                        timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: true,
+                      }),
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                      <XAxis dataKey="hour_cst" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={50} />
+                      <YAxis tick={{ fontSize: 10 }} unit="ms" />
+                      <Tooltip
+                        formatter={(v, name) => [`${v}ms`, name === 'avg_ms' ? 'Avg Response' : 'Max Response']}
+                        labelFormatter={(l) => `Time: ${l}`}
+                      />
+                      <Bar dataKey="avg_ms" fill="#dd6b20" radius={[3,3,0,0]} name="Avg Response" />
+                      <Bar dataKey="max_ms" fill="#e53e3e" radius={[3,3,0,0]} name="Max Response" opacity={0.4} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Slow windows table */}
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Slow Period Start (CST)</th>
+                      <th>Slow Period End (CST)</th>
+                      <th>Duration</th>
+                      <th>Checks</th>
+                      <th>Avg Response</th>
+                      <th>Max Response</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {site.slow_windows.map((w, i) => (
+                      <tr key={i} style={{ background: w.ongoing ? 'rgba(229,62,62,0.04)' : undefined }}>
+                        <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {new Date(w.start).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })} CST
+                        </td>
+                        <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {new Date(w.end).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })} CST
+                        </td>
+                        <td style={{ fontWeight: 600, color: 'var(--color-status-warning)' }}>{w.duration_minutes} min</td>
+                        <td>{w.check_count}</td>
+                        <td style={{ fontVariantNumeric: 'tabular-nums' }}>{w.avg_response_ms}ms</td>
+                        <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-status-critical)' }}>{w.max_response_ms}ms</td>
+                        <td>{w.ongoing ? <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Ongoing</span> : <span className="badge badge-warning">Ended</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Monitored Sites with live countdown */}
       <div className="card" style={{ marginTop: '20px' }}>

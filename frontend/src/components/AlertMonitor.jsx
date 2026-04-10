@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAlerts } from '../services/api';
+import { getAlerts, acknowledgeAlerts } from '../services/api';
 import { playAlarmBeep, startAlarmLoop, stopAlarmLoop } from '../services/alarm';
 
 function formatCST(dateStr) {
@@ -126,7 +126,11 @@ export default function AlertMonitor() {
             color: 'white', padding: '6px 14px', borderRadius: '20px',
             cursor: 'pointer', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
           }}>View Alerts</button>
-          <button onClick={() => { setAlarmAcknowledged(true); stopAlarmLoop(); }} style={{
+          <button onClick={() => {
+            setAlarmAcknowledged(true);
+            stopAlarmLoop();
+            acknowledgeAlerts().catch(() => {});
+          }} style={{
             background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)',
             color: 'white', padding: '6px 14px', borderRadius: '20px',
             cursor: 'pointer', fontSize: '12px', fontWeight: 500, whiteSpace: 'nowrap',

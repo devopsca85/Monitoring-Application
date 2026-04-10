@@ -259,6 +259,46 @@ def resolve_alert(
     return alert
 
 
+@router.post("/alerts/acknowledge")
+async def acknowledge_alerts(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Send Teams notification that alerts have been acknowledged."""
+    from app.services.notification_service import send_teams_alert
+
+    active = (
+        db.query(Alert)
+        .filter(Alert.resolved == False)
+        .all()
+    )
+    valid_site_ids = {s.id for s in db.query(Site.id).all()}
+    sites_map = {s.id: s for s in db.query(Site).all()}
+
+    site_names = []
+    for a in active:
+        if a.site_id in valid_site_ids:
+            s = sites_map.get(a.site_id)
+            site_names.append(s.name if s else f"Site #{a.site_id}")
+
+    if not site_names:
+        return {"status": "No active alerts to acknowledge"}
+
+    msg = (
+        f"**Alert Acknowledged** by **{user.full_name or user.email}**\n\n"
+        f"Affected sites: {', '.join(site_names)}\n\n"
+        f"The team is aware and actively investigating."
+    )
+
+    await send_teams_alert(
+        title=f"Alert Acknowledged — {len(site_names)} site(s)",
+        message=msg,
+        color="007AFF",
+    )
+
+    return {"status": f"Acknowledge notification sent for {len(site_names)} site(s)"}
+
+
 @router.get("/sites-status")
 def sites_status(
     db: Session = Depends(get_db),
@@ -305,6 +345,113 @@ def sites_status(
             "last_error": r.error_message if r else None,
         })
     return out
+
+
+@router.get("/slowness-analysis")
+def slowness_analysis(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Returns sites that were slow for >60 minutes in the last 24 hours, with time windows."""
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    sites = db.query(Site).filter(Site.is_active == True).all()
+    result = []
+
+    for site in sites:
+        threshold = site.slow_threshold_ms or 10000
+
+        # Get all results for this site in the last 24h
+        results = (
+            db.query(MonitoringResult)
+            .filter(
+                MonitoringResult.site_id == site.id,
+                MonitoringResult.checked_at >= cutoff,
+            )
+            .order_by(MonitoringResult.checked_at.asc())
+            .all()
+        )
+
+        if not results:
+            continue
+
+        # Find slow windows (consecutive slow results)
+        slow_windows = []
+        window_start = None
+        window_results = []
+
+        for r in results:
+            rt = r.response_time_ms or 0
+            if rt > threshold:
+                if window_start is None:
+                    window_start = r.checked_at
+                window_results.append(r)
+            else:
+                if window_start and window_results:
+                    window_end = window_results[-1].checked_at
+                    duration_min = (window_end - window_start).total_seconds() / 60
+                    if duration_min >= 60:
+                        avg_rt = sum(wr.response_time_ms or 0 for wr in window_results) / len(window_results)
+                        max_rt = max(wr.response_time_ms or 0 for wr in window_results)
+                        slow_windows.append({
+                            "start": window_start.isoformat(),
+                            "end": window_end.isoformat(),
+                            "duration_minutes": round(duration_min),
+                            "check_count": len(window_results),
+                            "avg_response_ms": round(avg_rt),
+                            "max_response_ms": round(max_rt),
+                        })
+                window_start = None
+                window_results = []
+
+        # Handle ongoing slow window
+        if window_start and window_results:
+            window_end = window_results[-1].checked_at
+            duration_min = (window_end - window_start).total_seconds() / 60
+            if duration_min >= 60:
+                avg_rt = sum(wr.response_time_ms or 0 for wr in window_results) / len(window_results)
+                max_rt = max(wr.response_time_ms or 0 for wr in window_results)
+                slow_windows.append({
+                    "start": window_start.isoformat(),
+                    "end": window_end.isoformat(),
+                    "duration_minutes": round(duration_min),
+                    "check_count": len(window_results),
+                    "avg_response_ms": round(avg_rt),
+                    "max_response_ms": round(max_rt),
+                    "ongoing": True,
+                })
+
+        if slow_windows:
+            # Build hourly response time data for the chart
+            hourly = {}
+            for r in results:
+                if r.checked_at:
+                    hour_key = r.checked_at.strftime("%Y-%m-%d %H:00")
+                    if hour_key not in hourly:
+                        hourly[hour_key] = []
+                    hourly[hour_key].append(r.response_time_ms or 0)
+
+            hourly_data = [
+                {"hour": k, "avg_ms": round(sum(v) / len(v)), "max_ms": round(max(v)), "count": len(v)}
+                for k, v in sorted(hourly.items())
+            ]
+
+            total_slow_min = sum(w["duration_minutes"] for w in slow_windows)
+            result.append({
+                "site_id": site.id,
+                "site_name": site.name,
+                "site_url": site.url,
+                "threshold_ms": threshold,
+                "slow_windows": slow_windows,
+                "total_slow_minutes": total_slow_min,
+                "hourly_data": hourly_data,
+            })
+
+    # Sort by total slow time descending
+    result.sort(key=lambda x: x["total_slow_minutes"], reverse=True)
+    return result
 
 
 @router.get("/dashboard", response_model=DashboardStats)
