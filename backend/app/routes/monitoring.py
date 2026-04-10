@@ -350,7 +350,7 @@ async def acknowledge_alerts(
         color="007AFF",
     )
 
-    return {"status": f"Acknowledge notification sent for {len(site_names)} site(s)"}
+    return {"status": f"Acknowledge notification sent for {total} site(s)"}
 
 
 @router.get("/sites-status")

@@ -260,8 +260,27 @@ async def run_login_check(
             password_sel = credentials.get("password_selector", "#password")
             submit_sel = credentials.get("submit_selector", "input[type='submit']")
 
-            await bpage.fill(username_sel, credentials.get("username", ""))
-            await bpage.fill(password_sel, credentials.get("password", ""))
+            try:
+                await bpage.fill(username_sel, credentials.get("username", ""))
+            except Exception as e:
+                await browser.close()
+                return {
+                    "status": "critical",
+                    "response_time_ms": (time.time() - start) * 1000,
+                    "status_code": 0,
+                    "error_message": f"Login page error — username field '{username_sel}' not found. Check selector or site may be down. ({str(e).split(chr(10))[0]})",
+                }
+
+            try:
+                await bpage.fill(password_sel, credentials.get("password", ""))
+            except Exception as e:
+                await browser.close()
+                return {
+                    "status": "critical",
+                    "response_time_ms": (time.time() - start) * 1000,
+                    "status_code": 0,
+                    "error_message": f"Login page error — password field '{password_sel}' not found. Check selector or site may be down. ({str(e).split(chr(10))[0]})",
+                }
 
             # Capture pre-login URL
             pre_login_url = bpage.url

@@ -135,7 +135,7 @@ export default function SiteDetail() {
                     <td style={{ fontVariantNumeric: 'tabular-nums' }}>
                       {sp.response_time_ms != null ? `${Math.round(sp.response_time_ms)}ms` : '-'}
                     </td>
-                    <td style={{ color: sp.error ? 'var(--color-status-critical)' : 'var(--color-text-secondary)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td title={sp.error || 'OK'} style={{ color: sp.error ? 'var(--color-status-critical)' : 'var(--color-text-secondary)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>
                       {sp.error || 'OK'}
                     </td>
                   </tr>
@@ -235,7 +235,7 @@ export default function SiteDetail() {
                           <span style={{ color: 'var(--color-text-secondary)' }}>-</span>
                         )}
                       </td>
-                      <td style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td title={r.error_message || ''} style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>
                         {r.error_message || '-'}
                       </td>
                     </tr>

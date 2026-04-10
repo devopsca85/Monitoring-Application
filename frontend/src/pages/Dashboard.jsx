@@ -221,7 +221,7 @@ export default function Dashboard() {
                   <tr key={alert.id}>
                     <td>{alert.site_name || `Site #${alert.site_id}`}</td>
                     <td><span className={`badge badge-${alert.alert_type}`}>{alert.alert_type}</span></td>
-                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{alert.message}</td>
+                    <td title={alert.message || ''} style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{alert.message}</td>
                   </tr>
                 ))}
                 {alerts.length === 0 && (
@@ -272,7 +272,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{a.site_url}</div>
                   </td>
                   <td><span className={`badge badge-${a.alert_type}`}>{a.alert_type}</span></td>
-                  <td style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px' }}>{a.message || '-'}</td>
+                  <td title={a.message || ''} style={{ maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px', cursor: 'default' }}>{a.message || '-'}</td>
                   <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                     {formatCST(a.created_at)}
                   </td>

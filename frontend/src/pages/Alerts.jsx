@@ -111,7 +111,7 @@ export default function Alerts() {
                         <td><span className={`badge badge-${s.last_status || 'warning'}`}>{s.last_status || 'slow'}</span></td>
                         <td style={{ fontVariantNumeric: 'tabular-nums' }}>{s.last_response_time_ms ? `${Math.round(s.last_response_time_ms)}ms` : '-'}</td>
                         <td style={{ fontSize: '12px' }}>{formatCST(s.last_checked_at)}</td>
-                        <td style={{ fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <td title={s.last_error || (s.is_slow ? `Slow (>${s.slow_threshold_ms}ms)` : 'Down')} style={{ fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>
                           {s.last_error || (s.is_slow ? `Slow (>${s.slow_threshold_ms}ms)` : 'Down')}
                         </td>
                       </tr>
@@ -140,7 +140,7 @@ export default function Alerts() {
                       <tr key={a.id} style={{ background: !a.resolved ? 'rgba(229,62,62,0.04)' : undefined }}>
                         <td><Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link></td>
                         <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
-                        <td style={{ maxWidth: '250px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.message || '-'}</td>
+                        <td title={a.message || ''} style={{ maxWidth: '250px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{a.message || '-'}</td>
                         <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
                         <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
                         <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Active</span>}</td>
@@ -200,7 +200,7 @@ export default function Alerts() {
                   <tr key={a.id}>
                     <td><Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link></td>
                     <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
-                    <td style={{ maxWidth: '250px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.message || '-'}</td>
+                    <td title={a.message || ''} style={{ maxWidth: '250px', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{a.message || '-'}</td>
                     <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
                     <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{a.resolved ? formatCST(a.resolved_at) : <span style={{ color: 'var(--color-status-critical)', fontWeight: 600 }}>ONGOING</span>}</td>
                     <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
