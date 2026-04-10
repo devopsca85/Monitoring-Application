@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { getDashboardStats, getAlerts, getSitesStatus, getAlertHistory, getSlownessAnalysis } from '../services/api';
+import { getDashboardStats, getAlerts, getSitesStatus, getAlertHistory, getSlownessAnalysis, deleteAlertHistory } from '../services/api';
 import { formatCST, formatCSTShort, formatCSTHour } from '../services/time';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -237,7 +237,20 @@ export default function Dashboard() {
       <div className="card" style={{ marginTop: '20px' }}>
         <div className="card-header">
           <h3>Alert History</h3>
-          <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Times shown in CST</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Times shown in CST</span>
+            {alertHistory.length > 0 && (
+              <button onClick={async () => {
+                if (!confirm('Delete all resolved alert history? Active alerts will not be affected.')) return;
+                try {
+                  await deleteAlertHistory();
+                  loadData();
+                } catch (e) { console.error('Delete history failed:', e); }
+              }} className="btn btn-danger" style={{ padding: '4px 12px', fontSize: '12px' }}>
+                Clear History
+              </button>
+            )}
+          </div>
         </div>
         <div className="table-container">
           <table>

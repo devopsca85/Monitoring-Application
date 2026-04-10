@@ -50,6 +50,7 @@ export const resolveAlert = (id) => api.post(`/monitoring/alerts/${id}/resolve`)
 export const getAlertHistory = (limit = 100) => api.get(`/monitoring/alert-history-raw?limit=${limit}`);
 export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`);
 export const acknowledgeAlerts = () => api.post('/monitoring/alerts/acknowledge');
+export const deleteAlertHistory = () => api.delete('/monitoring/alerts/history');
 export const getSlownessAnalysis = () => api.get('/monitoring/slowness-analysis');
 export const getSitesStatus = () => api.get('/monitoring/sites-status');
 

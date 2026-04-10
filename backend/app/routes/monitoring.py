@@ -252,6 +252,22 @@ def debug_alerts(db: Session = Depends(get_db)):
     ]
 
 
+@router.delete("/alerts/history", status_code=200)
+def delete_alert_history(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete all resolved alerts. Active alerts are not affected."""
+    from app.routes.admin import require_admin
+    # Only admins can delete history
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    deleted = db.query(Alert).filter(Alert.resolved == True).delete()
+    db.commit()
+    return {"status": f"Deleted {deleted} resolved alerts"}
+
+
 @router.post("/alerts/{alert_id}/resolve", response_model=AlertResponse)
 def resolve_alert(
     alert_id: int,
