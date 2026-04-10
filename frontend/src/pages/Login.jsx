@@ -36,8 +36,7 @@ export default function Login({ onLogin }) {
     if (code && !ssoLoading) {
       setSsoLoading(true);
       setError('');
-      const redirectUri = `${window.location.origin}/login`;
-      ssoCallback({ code, redirect_uri: redirectUri })
+      ssoCallback({ code })
         .then(async (res) => {
           localStorage.setItem('token', res.data.access_token);
           const me = await getMe();
@@ -89,10 +88,8 @@ export default function Login({ onLogin }) {
   };
 
   const handleSsoLogin = () => {
-    // Add redirect_uri to the auth URL pointing back to /login
-    const redirectUri = `${window.location.origin}/login`;
-    const url = ssoAuthUrl + `&redirect_uri=${encodeURIComponent(redirectUri)}`;
-    window.location.href = url;
+    // auth_url already contains redirect_uri from admin settings — use as-is
+    window.location.href = ssoAuthUrl;
   };
 
   if (checking) return null;

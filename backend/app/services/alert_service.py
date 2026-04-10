@@ -142,41 +142,56 @@ async def _handle_slow_sites(db: Session) -> None:
     if not slow_sites:
         return
 
-    # Create individual alert records (for tracking)
+    # Create or update alert records — one per site, no duplicates
+    new_alerts = []
     for entry in slow_sites:
         site = entry["site"]
         msg = f"SLOW: {site.name} — {entry['response_ms']}ms (threshold: {entry['threshold_ms']}ms)"
 
-        alert = Alert(
-            site_id=site.id,
-            alert_type=AlertStatus.WARNING,
-            message=msg,
-            notified=True,
-            notified_at=datetime.now(timezone.utc),
-            resolved=False,
+        existing = (
+            db.query(Alert)
+            .filter(Alert.site_id == site.id, Alert.resolved == False)
+            .first()
         )
-        db.add(alert)
+        if existing:
+            # Update existing alert message with latest data
+            existing.message = msg
+            existing.alert_type = AlertStatus.WARNING
+        else:
+            alert = Alert(
+                site_id=site.id,
+                alert_type=AlertStatus.WARNING,
+                message=msg,
+                notified=True,
+                notified_at=datetime.now(timezone.utc),
+                resolved=False,
+            )
+            db.add(alert)
+            new_alerts.append(entry)
 
     db.commit()
 
-    # Send ONE consolidated notification for all slow sites
+    # Only send notification for NEW slow alerts (not already-existing ones)
+    if not new_alerts:
+        logger.info("All slow sites already have active alerts — skipping notification")
+        return
+
     site_lines = "\n".join(
         f"- {e['site'].name} ({e['site'].url}): {e['response_ms']}ms (threshold: {e['threshold_ms']}ms)"
-        for e in slow_sites
+        for e in new_alerts
     )
     consolidated_msg = (
-        f"{len(slow_sites)} site(s) experiencing sustained slowness "
+        f"{len(new_alerts)} site(s) experiencing sustained slowness "
         f"(>{SLOW_SUSTAINED_MINUTES} min):\n{site_lines}"
     )
 
     html_lines = "".join(
         f"<li><strong>{e['site'].name}</strong> — {e['response_ms']}ms (threshold: {e['threshold_ms']}ms)</li>"
-        for e in slow_sites
+        for e in new_alerts
     )
-    html_msg = f"<p>{len(slow_sites)} site(s) with sustained slowness:</p><ul>{html_lines}</ul>"
+    html_msg = f"<p>{len(new_alerts)} site(s) with sustained slowness:</p><ul>{html_lines}</ul>"
 
-    # Use first slow site's notification settings, or send to all admin emails
-    first_site = slow_sites[0]["site"]
+    first_site = new_alerts[0]["site"]
     to_emails = [e.strip() for e in (first_site.notification_emails or "").split(",") if e.strip()]
 
     try:

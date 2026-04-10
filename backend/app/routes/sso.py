@@ -33,7 +33,6 @@ def _get_setting(db: Session, key: str) -> str:
 
 
 def _get_sso_config(db: Session) -> dict | None:
-    """Load Azure SSO config from system_settings."""
     enabled = _get_setting(db, "sso_enabled")
     if enabled != "true":
         return None
@@ -41,8 +40,9 @@ def _get_sso_config(db: Session) -> dict | None:
     tenant_id = _get_setting(db, "sso_tenant_id")
     client_id = _get_setting(db, "sso_client_id")
     client_secret = _get_setting(db, "sso_client_secret")
+    redirect_uri = _get_setting(db, "sso_redirect_uri")
 
-    if not all([tenant_id, client_id, client_secret]):
+    if not all([tenant_id, client_id, client_secret, redirect_uri]):
         return None
 
     return {
@@ -50,7 +50,7 @@ def _get_sso_config(db: Session) -> dict | None:
         "client_id": client_id,
         "client_secret": client_secret,
         "authority": f"https://login.microsoftonline.com/{tenant_id}",
-        "redirect_uri": _get_setting(db, "sso_redirect_uri") or "",
+        "redirect_uri": redirect_uri,
         "admin_group_id": _get_setting(db, "sso_admin_group_id") or "",
         "user_group_id": _get_setting(db, "sso_user_group_id") or "",
     }
@@ -67,7 +67,7 @@ def sso_config(db: Session = Depends(get_db)):
     client_id = _get_setting(db, "sso_client_id")
     redirect_uri = _get_setting(db, "sso_redirect_uri")
 
-    if not all([tenant_id, client_id]):
+    if not all([tenant_id, client_id, redirect_uri]):
         return {"enabled": False}
 
     authority = f"https://login.microsoftonline.com/{tenant_id}"
@@ -82,9 +82,8 @@ def sso_config(db: Session = Depends(get_db)):
 
     return {
         "enabled": True,
-        "tenant_id": tenant_id,
-        "client_id": client_id,
         "auth_url": auth_url,
+        "redirect_uri": redirect_uri,
     }
 
 
@@ -98,9 +97,9 @@ async def sso_callback(
     if not config:
         raise HTTPException(status_code=400, detail="Azure SSO is not configured")
 
-    redirect_uri = data.redirect_uri or config["redirect_uri"]
+    # Always use the redirect_uri from settings — must match what Azure has registered
+    redirect_uri = config["redirect_uri"]
 
-    # Exchange auth code for tokens using MSAL
     try:
         app = msal.ConfidentialClientApplication(
             config["client_id"],
@@ -123,7 +122,6 @@ async def sso_callback(
             detail=result.get("error_description", "SSO authentication failed"),
         )
 
-    # Extract user info from ID token claims
     id_token_claims = result.get("id_token_claims", {})
     email = (
         id_token_claims.get("preferred_username")
@@ -137,7 +135,7 @@ async def sso_callback(
 
     logger.info(f"SSO login: {email} ({full_name})")
 
-    # Check group membership via MS Graph API
+    # Check group membership
     is_admin = False
     access_token = result.get("access_token")
     admin_group_id = config.get("admin_group_id", "")
@@ -154,17 +152,14 @@ async def sso_callback(
                 if resp.status_code == 200:
                     groups = resp.json().get("value", [])
                     group_ids = {g.get("id", "") for g in groups}
-                    logger.info(f"SSO user {email} groups: {group_ids}")
 
                     if admin_group_id and admin_group_id in group_ids:
                         is_admin = True
                     elif user_group_id and user_group_id not in group_ids:
                         raise HTTPException(
                             status_code=403,
-                            detail="You are not in an authorized group to access this application",
+                            detail="You are not in an authorized group",
                         )
-                else:
-                    logger.warning(f"Graph API memberOf failed: {resp.status_code}")
         except HTTPException:
             raise
         except Exception as e:
@@ -185,7 +180,6 @@ async def sso_callback(
         db.refresh(user)
         logger.info(f"SSO: Created new user {email} (admin={is_admin})")
     else:
-        # Update name and admin status based on group
         user.full_name = full_name or user.full_name
         if admin_group_id:
             user.is_admin = is_admin
