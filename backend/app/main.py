@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import Base, engine
-from app.routes import admin, auth, monitoring, sites
+from app.routes import admin, auth, monitoring, sites, sso
 
 settings = get_settings()
 
@@ -44,6 +44,7 @@ app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(sites.router, prefix=settings.API_V1_PREFIX)
 app.include_router(monitoring.router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
+app.include_router(sso.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.on_event("startup")

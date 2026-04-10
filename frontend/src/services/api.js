@@ -64,4 +64,12 @@ export const updateTeamsSettings = (data) => api.put('/admin/settings/teams', da
 export const testSmtp = (data) => api.post('/admin/settings/smtp/test', data);
 export const testTeams = () => api.post('/admin/settings/teams/test');
 
+// Admin — Azure SSO
+export const getSsoSettings = () => api.get('/admin/settings/sso');
+export const updateSsoSettings = (data) => api.put('/admin/settings/sso', data);
+
+// SSO (public)
+export const getSsoConfig = () => api.get('/sso/config');
+export const ssoCallback = (data) => api.post('/sso/callback', data);
+
 export default api;

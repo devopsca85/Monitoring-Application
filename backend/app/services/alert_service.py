@@ -23,6 +23,10 @@ async def _create_and_send_alert(
 ) -> None:
     """Create an alert record and send notification."""
     try:
+        # Get status value safely
+        status_enum = result.status
+        status_str = status_enum.value if hasattr(status_enum, 'value') else str(status_enum)
+
         # Check for existing unresolved alert
         existing_alert = (
             db.query(Alert)
@@ -31,23 +35,24 @@ async def _create_and_send_alert(
         )
 
         if existing_alert:
-            # Update the existing alert with latest message instead of silently ignoring
             existing_alert.message = message
-            existing_alert.alert_type = result.status
+            existing_alert.alert_type = status_enum
             db.commit()
             logger.info(f"Updated existing alert #{existing_alert.id} for {site.name}")
             return
 
         alert = Alert(
             site_id=site.id,
-            alert_type=result.status,
+            alert_type=status_enum,
             message=message,
             notified=True,
             notified_at=datetime.now(timezone.utc),
+            resolved=False,
         )
         db.add(alert)
         db.commit()
-        logger.info(f"Created alert #{alert.id} for {site.name}: {message[:100]}")
+        db.refresh(alert)
+        logger.info(f"ALERT CREATED #{alert.id} for {site.name}: {status_str} — {message[:100]}")
 
         to_emails = [
             e.strip()
@@ -55,17 +60,20 @@ async def _create_and_send_alert(
             if e.strip()
         ]
 
-        await send_alert(
-            channel=site.notification_channel.value,
-            to_emails=to_emails,
-            site_name=site.name,
-            status=result.status.value,
-            message=message,
-        )
-        logger.info(f"Alert notification sent for {site.name}")
+        try:
+            await send_alert(
+                channel=site.notification_channel.value,
+                to_emails=to_emails,
+                site_name=site.name,
+                status=status_str,
+                message=message,
+            )
+            logger.info(f"Alert notification sent for {site.name}")
+        except Exception as ne:
+            logger.error(f"Notification send failed for {site.name} (alert still created): {ne}")
 
     except Exception as e:
-        logger.error(f"Failed to create/send alert for {site.name}: {e}")
+        logger.error(f"ALERT CREATION FAILED for {site.name}: {e}", exc_info=True)
 
 
 async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
@@ -92,16 +100,12 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
                 )
                 logger.warning(f"Slowness alert for {site.name}: {int(response_time)}ms > {slow_threshold}ms")
 
-                # Create a warning-level alert for slowness
-                slow_result = MonitoringResult(
-                    site_id=result.site_id,
-                    check_type=result.check_type,
-                    status=AlertStatus.WARNING,
-                    response_time_ms=result.response_time_ms,
-                    status_code=result.status_code,
-                    error_message=slow_msg,
-                )
-                await _create_and_send_alert(db, site, slow_result, slow_msg)
+                # Update the original result status to WARNING for the slowness
+                result.status = AlertStatus.WARNING
+                result.error_message = slow_msg
+                db.commit()
+
+                await _create_and_send_alert(db, site, result, slow_msg)
                 return
 
             # Resolve any open alerts (site is OK and fast)

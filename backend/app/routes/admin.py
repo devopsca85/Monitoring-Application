@@ -7,6 +7,8 @@ from app.models.models import SystemSetting, User
 from app.models.schemas import (
     AdminUserCreate,
     AdminUserUpdate,
+    AzureSsoSettings,
+    AzureSsoSettingsResponse,
     SmtpSettingsUpdate,
     SmtpTestRequest,
     SystemSettingsResponse,
@@ -263,3 +265,38 @@ async def test_smtp(
         return {"status": "Test email sent successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"SMTP test failed: {str(e)}")
+
+
+# ===========================================================================
+# AZURE SSO SETTINGS
+# ===========================================================================
+@router.get("/settings/sso", response_model=AzureSsoSettingsResponse)
+def get_sso_settings(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    client_secret = _get_setting(db, "sso_client_secret")
+    return AzureSsoSettingsResponse(
+        enabled=_get_setting(db, "sso_enabled") == "true",
+        tenant_id=_get_setting(db, "sso_tenant_id"),
+        client_id=_get_setting(db, "sso_client_id"),
+        client_secret_set=bool(client_secret),
+        redirect_uri=_get_setting(db, "sso_redirect_uri"),
+        admin_group_id=_get_setting(db, "sso_admin_group_id"),
+        user_group_id=_get_setting(db, "sso_user_group_id"),
+    )
+
+
+@router.put("/settings/sso")
+def update_sso_settings(
+    data: AzureSsoSettings,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    _set_setting(db, "sso_enabled", "true" if data.enabled else "false")
+    _set_setting(db, "sso_tenant_id", data.tenant_id)
+    _set_setting(db, "sso_client_id", data.client_id)
+    if data.client_secret:
+        _set_setting(db, "sso_client_secret", data.client_secret, encrypted=True)
+    _set_setting(db, "sso_redirect_uri", data.redirect_uri)
+    _set_setting(db, "sso_admin_group_id", data.admin_group_id)
+    _set_setting(db, "sso_user_group_id", data.user_group_id)
+    db.commit()
+    return {"status": "Azure SSO settings saved"}

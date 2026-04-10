@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getSystemSettings, updateSmtpSettings, updateTeamsSettings, testSmtp, testTeams } from '../services/api';
+import { getSystemSettings, updateSmtpSettings, updateTeamsSettings, testSmtp, testTeams, getSsoSettings, updateSsoSettings } from '../services/api';
 
 export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
@@ -11,6 +11,11 @@ export default function AdminSettings() {
   const [teams, setTeams] = useState({ teams_webhook_url: '', teams_enabled: true });
   const [teamsSet, setTeamsSet] = useState(false);
   const [testEmail, setTestEmail] = useState('');
+  const [sso, setSso] = useState({
+    enabled: false, tenant_id: '', client_id: '', client_secret: '',
+    redirect_uri: '', admin_group_id: '', user_group_id: '',
+  });
+  const [ssoSecretSet, setSsoSecretSet] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   const showMsg = (text, type = 'success') => {
@@ -33,6 +38,18 @@ export default function AdminSettings() {
         setSmtpPasswordSet(s.smtp_password_set);
         setTeams({ teams_webhook_url: '', teams_enabled: s.teams_enabled !== false });
         setTeamsSet(s.teams_webhook_set);
+      })
+      .catch(() => {});
+
+    getSsoSettings()
+      .then((r) => {
+        const s = r.data;
+        setSso({
+          enabled: s.enabled, tenant_id: s.tenant_id || '', client_id: s.client_id || '',
+          client_secret: '', redirect_uri: s.redirect_uri || '',
+          admin_group_id: s.admin_group_id || '', user_group_id: s.user_group_id || '',
+        });
+        setSsoSecretSet(s.client_secret_set);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -194,6 +211,77 @@ export default function AdminSettings() {
         </div>
       </form>
 
+      {/* Azure SSO */}
+      <form onSubmit={async (e) => {
+        e.preventDefault();
+        try {
+          await updateSsoSettings(sso);
+          showMsg('Azure SSO settings saved');
+          if (sso.client_secret) setSsoSecretSet(true);
+        } catch (err) { showMsg(err.response?.data?.detail || 'Failed to save SSO settings', 'error'); }
+      }}>
+        <div className="card">
+          <div className="card-header">
+            <h3>Azure SSO (Entra ID)</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className={`badge ${sso.enabled ? 'badge-ok' : 'badge-warning'}`}>
+                {sso.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}>
+                <input type="checkbox" checked={sso.enabled} onChange={(e) => setSso({ ...sso, enabled: e.target.checked })}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--color-primary)' }} />
+                {sso.enabled ? 'ON' : 'OFF'}
+              </label>
+            </div>
+          </div>
+
+          <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+            Configure Azure App Registration to enable "Sign in with Microsoft" on the login page.
+            Users will be auto-created on first SSO login. Map Entra ID groups to control admin/user roles.
+          </p>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Tenant ID</label>
+              <input value={sso.tenant_id} onChange={(e) => setSso({ ...sso, tenant_id: e.target.value })} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            </div>
+            <div className="form-group">
+              <label>Client ID (Application ID)</label>
+              <input value={sso.client_id} onChange={(e) => setSso({ ...sso, client_id: e.target.value })} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Client Secret {ssoSecretSet && <span style={{ color: 'var(--color-status-ok)', fontSize: '12px' }}>(set — leave blank to keep)</span>}</label>
+              <input type="password" value={sso.client_secret} onChange={(e) => setSso({ ...sso, client_secret: e.target.value })} placeholder={ssoSecretSet ? 'Leave blank to keep current' : 'Enter client secret'} />
+            </div>
+            <div className="form-group">
+              <label>Redirect URI</label>
+              <input value={sso.redirect_uri} onChange={(e) => setSso({ ...sso, redirect_uri: e.target.value })} placeholder={`${window.location.origin}/sso/callback`} />
+              <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px', display: 'block' }}>
+                Must match the redirect URI in Azure App Registration.
+              </span>
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '16px', marginTop: '8px', marginBottom: '12px' }}>
+            <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>Entra ID Group Mapping</h4>
+            <div className="form-row">
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Admin Group ID <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: 'normal' }}>— users in this group get Admin role</span></label>
+                <input value={sso.admin_group_id} onChange={(e) => setSso({ ...sso, admin_group_id: e.target.value })} placeholder="Entra ID Group Object ID (optional)" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>User Group ID <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: 'normal' }}>— only users in this group can access</span></label>
+                <input value={sso.user_group_id} onChange={(e) => setSso({ ...sso, user_group_id: e.target.value })} placeholder="Entra ID Group Object ID (optional)" />
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" className="btn btn-primary">Save SSO Settings</button>
+        </div>
+      </form>
+
       {/* Security Info */}
       <div className="card">
         <div className="card-header"><h3>Security</h3></div>
@@ -203,6 +291,7 @@ export default function AdminSettings() {
             <li>Site login credentials (username & password) — <strong>Fernet AES-128 encrypted</strong></li>
             <li>SMTP password — <strong>Fernet AES-128 encrypted</strong></li>
             <li>Teams webhook URL — <strong>Fernet AES-128 encrypted</strong></li>
+            <li>Azure SSO client secret — <strong>Fernet AES-128 encrypted</strong></li>
             <li>User passwords — <strong>bcrypt hashed</strong> (one-way, cannot be decrypted)</li>
           </ul>
         </div>

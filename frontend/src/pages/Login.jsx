@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { login, register, getMe } from '../services/api';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { login, register, getMe, getSsoConfig, ssoCallback } from '../services/api';
 import api from '../services/api';
 
 export default function Login({ onLogin }) {
@@ -11,14 +11,47 @@ export default function Login({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [isSetup, setIsSetup] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [ssoAuthUrl, setSsoAuthUrl] = useState('');
+  const [ssoLoading, setSsoLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
-    api.get('/auth/setup-check')
-      .then((r) => setIsSetup(r.data.needs_setup))
-      .catch(() => setIsSetup(false))
-      .finally(() => setChecking(false));
+    // Check setup + SSO config in parallel
+    Promise.all([
+      api.get('/auth/setup-check').then((r) => setIsSetup(r.data.needs_setup)).catch(() => setIsSetup(false)),
+      getSsoConfig().then((r) => {
+        if (r.data.enabled) {
+          setSsoEnabled(true);
+          setSsoAuthUrl(r.data.auth_url);
+        }
+      }).catch(() => {}),
+    ]).finally(() => setChecking(false));
   }, []);
+
+  // Handle SSO callback (code in URL params)
+  useEffect(() => {
+    const code = searchParams.get('code');
+    if (code && !ssoLoading) {
+      setSsoLoading(true);
+      setError('');
+      const redirectUri = `${window.location.origin}/login`;
+      ssoCallback({ code, redirect_uri: redirectUri })
+        .then(async (res) => {
+          localStorage.setItem('token', res.data.access_token);
+          const me = await getMe();
+          onLogin(me.data);
+          navigate('/');
+        })
+        .catch((err) => {
+          setError(err.response?.data?.detail || 'Azure SSO login failed');
+          // Clear code from URL
+          window.history.replaceState({}, '', '/login');
+        })
+        .finally(() => setSsoLoading(false));
+    }
+  }, [searchParams]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -55,7 +88,28 @@ export default function Login({ onLogin }) {
     }
   };
 
+  const handleSsoLogin = () => {
+    // Add redirect_uri to the auth URL pointing back to /login
+    const redirectUri = `${window.location.origin}/login`;
+    const url = ssoAuthUrl + `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    window.location.href = url;
+  };
+
   if (checking) return null;
+
+  if (ssoLoading) {
+    return (
+      <div className="login-container">
+        <div className="login-card" style={{ textAlign: 'center' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <img src="https://www.fldata.com/wp-content/uploads/2020/09/fldata_logo.png" alt="FLData" style={{ maxWidth: '200px', height: 'auto' }} />
+          </div>
+          <p style={{ marginBottom: '16px' }}>Signing in with Microsoft...</p>
+          <div style={{ width: '40px', height: '40px', border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="login-container">
@@ -90,6 +144,36 @@ export default function Login({ onLogin }) {
           <>
             <p>Sign in to your monitoring dashboard</p>
             {error && <div className="error-message">{error}</div>}
+
+            {/* Azure SSO Button */}
+            {ssoEnabled && (
+              <>
+                <button onClick={handleSsoLogin} style={{
+                  width: '100%', padding: '12px', border: '1px solid var(--color-border)',
+                  borderRadius: '30px', background: 'var(--color-bg-white)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                  fontSize: '14px', fontWeight: 500, color: 'var(--color-text)',
+                  transition: 'all 0.2s', marginBottom: '16px',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-bg)'; e.currentTarget.style.borderColor = 'var(--color-primary)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-bg-white)'; e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 21 21">
+                    <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                  </svg>
+                  Sign in with Microsoft
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+                  <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>or</span>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--color-border)' }} />
+                </div>
+              </>
+            )}
+
             <form onSubmit={handleLogin}>
               <div className="form-group">
                 <label>Email</label>

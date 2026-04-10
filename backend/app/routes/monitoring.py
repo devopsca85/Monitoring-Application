@@ -95,10 +95,10 @@ def get_alerts(
             site_id=a.site_id,
             site_name=sites[a.site_id].name if a.site_id in sites else f"Site #{a.site_id}",
             site_url=sites[a.site_id].url if a.site_id in sites else "",
-            alert_type=a.alert_type,
-            message=a.message,
-            notified=a.notified,
-            resolved=a.resolved,
+            alert_type=a.alert_type if a.alert_type else None,
+            message=a.message or "",
+            notified=bool(a.notified),
+            resolved=bool(a.resolved),
             created_at=a.created_at,
             resolved_at=a.resolved_at,
         )
@@ -120,7 +120,7 @@ def get_alert_history(
         .all()
     )
     site_ids = {a.site_id for a in alerts}
-    sites = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()}
+    sites = {s.id: s for s in db.query(Site).filter(Site.id.in_(site_ids)).all()} if site_ids else {}
 
     result = []
     for a in alerts:
@@ -130,14 +130,35 @@ def get_alert_history(
             site_id=a.site_id,
             site_name=s.name if s else f"Site #{a.site_id}",
             site_url=s.url if s else "",
-            alert_type=a.alert_type,
-            message=a.message,
-            notified=a.notified,
-            resolved=a.resolved,
+            alert_type=a.alert_type if a.alert_type else None,
+            message=a.message or "",
+            notified=bool(a.notified),
+            resolved=bool(a.resolved),
             created_at=a.created_at,
             resolved_at=a.resolved_at,
         ))
     return result
+
+
+@router.get("/alerts/debug")
+def debug_alerts(db: Session = Depends(get_db)):
+    """Debug endpoint — returns raw alert data without Pydantic serialization."""
+    alerts = db.query(Alert).order_by(Alert.created_at.desc()).limit(20).all()
+    return [
+        {
+            "id": a.id,
+            "site_id": a.site_id,
+            "alert_type": str(a.alert_type) if a.alert_type else None,
+            "message": a.message,
+            "notified": a.notified,
+            "notified_type": type(a.notified).__name__,
+            "resolved": a.resolved,
+            "resolved_type": type(a.resolved).__name__,
+            "created_at": str(a.created_at) if a.created_at else None,
+            "resolved_at": str(a.resolved_at) if a.resolved_at else None,
+        }
+        for a in alerts
+    ]
 
 
 @router.post("/alerts/{alert_id}/resolve", response_model=AlertResponse)

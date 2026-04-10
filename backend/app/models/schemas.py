@@ -222,3 +222,27 @@ class TeamsSettingsUpdate(BaseModel):
 
 class SmtpTestRequest(BaseModel):
     to_email: str
+
+
+# --- Azure SSO ---
+class AzureSsoSettings(BaseModel):
+    enabled: bool = False
+    tenant_id: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
+    admin_group_id: str = ""
+    user_group_id: str = ""
+
+class AzureSsoSettingsResponse(BaseModel):
+    enabled: bool = False
+    tenant_id: str = ""
+    client_id: str = ""
+    client_secret_set: bool = False
+    redirect_uri: str = ""
+    admin_group_id: str = ""
+    user_group_id: str = ""
+
+class AzureSsoCallbackRequest(BaseModel):
+    code: str
+    redirect_uri: str = ""

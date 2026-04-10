@@ -103,10 +103,10 @@ export default function Dashboard() {
 
   const loadData = () => {
     Promise.all([
-      getDashboardStats().then((r) => setStats(r.data)).catch(() => {}),
-      getSitesStatus().then((r) => setSitesStatus(r.data)).catch(() => {}),
-      getAlerts().then((r) => setAlerts(r.data)).catch(() => {}),
-      getAlertHistory(30).then((r) => setAlertHistory(r.data)).catch(() => {}),
+      getDashboardStats().then((r) => setStats(r.data)).catch((e) => console.error('Dashboard stats error:', e)),
+      getSitesStatus().then((r) => setSitesStatus(r.data)).catch((e) => console.error('Sites status error:', e)),
+      getAlerts().then((r) => { setAlerts(r.data || []); }).catch((e) => { console.error('Alerts error:', e); setAlerts([]); }),
+      getAlertHistory(30).then((r) => setAlertHistory(r.data || [])).catch((e) => { console.error('Alert history error:', e); setAlertHistory([]); }),
     ]);
     nextRefreshAt.current = Date.now() + 15000;
     setRefreshIn(15);
@@ -217,7 +217,7 @@ export default function Dashboard() {
               <tbody>
                 {alerts.slice(0, 5).map((alert) => (
                   <tr key={alert.id}>
-                    <td>Site #{alert.site_id}</td>
+                    <td>{alert.site_name || `Site #${alert.site_id}`}</td>
                     <td><span className={`badge badge-${alert.alert_type}`}>{alert.alert_type}</span></td>
                     <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{alert.message}</td>
                   </tr>
