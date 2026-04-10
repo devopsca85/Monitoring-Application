@@ -10,6 +10,7 @@ import Alerts from './pages/Alerts';
 import AdminUsers from './pages/AdminUsers';
 import AdminSettings from './pages/AdminSettings';
 import Profile from './pages/Profile';
+import Metrics from './pages/Metrics';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -51,6 +52,7 @@ function App() {
             <Route path="/sites/:id/edit" element={<SiteForm />} />
             <Route path="/sites/:id" element={<SiteDetail />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/metrics" element={<Metrics />} />
             <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
             {user.is_admin && (
               <>
@@ -191,6 +193,10 @@ function Sidebar({ user }) {
         <Link to="/alerts" className={isActive('/alerts')}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           Alerts
+        </Link>
+        <Link to="/metrics" className={isActive('/metrics')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 21H3V3"/><path d="M18 9l-5 5-2-2-4 4"/></svg>
+          Metrics & Rules
         </Link>
         {user.is_admin && (
           <>

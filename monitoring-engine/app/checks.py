@@ -230,36 +230,40 @@ async def run_login_check(
                 timeout=settings.BROWSER_TIMEOUT_MS,
                 wait_until="domcontentloaded",
             )
-            await bpage.wait_for_load_state("networkidle", timeout=10000)
 
             # Fill credentials
             username_sel = credentials.get("username_selector", "#username")
             password_sel = credentials.get("password_selector", "#password")
             submit_sel = credentials.get("submit_selector", "input[type='submit']")
 
-            logger.info(f"Filling: user='{username_sel}', pass='{password_sel}', submit='{submit_sel}'")
-
             await bpage.fill(username_sel, credentials.get("username", ""))
             await bpage.fill(password_sel, credentials.get("password", ""))
 
             # Capture pre-login URL
             pre_login_url = bpage.url
-            logger.info(f"Pre-login URL: {pre_login_url}")
 
-            # Submit — wait for full page load (handles ASP.NET postback + redirect)
+            # ---- START measuring actual response time ----
+            response_start = time.time()
+
+            # Submit and wait for navigation
             try:
                 async with bpage.expect_navigation(timeout=20000, wait_until="load"):
                     await bpage.click(submit_sel)
-                logger.info(f"Navigation completed after submit")
-            except Exception as e:
-                logger.info(f"No navigation after submit (SPA?): {e}")
-
-            # Wait for everything to settle
-            try:
-                await bpage.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
                 pass
-            await bpage.wait_for_timeout(5000)
+
+            # Wait for network to settle (actual page load time)
+            try:
+                await bpage.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+
+            # ---- END measuring actual response time ----
+            actual_response_ms = (time.time() - response_start) * 1000
+            logger.info(f"Actual response time: {int(actual_response_ms)}ms")
+
+            # Small buffer for JS rendering (NOT counted in response time)
+            await bpage.wait_for_timeout(2000)
 
             post_login_url = bpage.url
             logger.info(f"Post-login URL: {post_login_url}")
@@ -268,12 +272,11 @@ async def run_login_check(
             failure_msg = await _detect_login_failure(bpage, pre_login_url)
 
             if failure_msg:
-                elapsed = (time.time() - start) * 1000
                 logger.warning(f"Login FAILED for {site['url']}: {failure_msg}")
                 await browser.close()
                 return {
                     "status": "critical",
-                    "response_time_ms": elapsed,
+                    "response_time_ms": actual_response_ms,
                     "status_code": 200,
                     "error_message": failure_msg,
                 }
@@ -283,19 +286,16 @@ async def run_login_check(
             indicator = (credentials.get("success_indicator") or "").strip()
             lower_url = bpage.url.lower()
 
-            # Primary check: did we land on the expected page?
             on_expected_page = expected_page.lower() in lower_url
             logger.info(
                 f"Expected page '{expected_page}' in URL '{bpage.url}': {on_expected_page}"
             )
 
             if on_expected_page:
-                # We're on the right page — login succeeded
-                # Optionally verify the CSS indicator too
                 if indicator:
                     found = await _check_indicator_strict(bpage, indicator)
                     if not found:
-                        await bpage.wait_for_timeout(5000)
+                        await bpage.wait_for_timeout(2000)
                         found = await _check_indicator_strict(bpage, indicator)
                     if not found:
                         logger.warning(
@@ -303,21 +303,19 @@ async def run_login_check(
                         )
                 logger.info(f"Login SUCCESS for {site['url']}, landed on: {bpage.url}")
             else:
-                # Not on expected page — try indicator as fallback
                 if indicator:
                     found = await _check_indicator_strict(bpage, indicator)
                     if not found:
-                        await bpage.wait_for_timeout(5000)
+                        await bpage.wait_for_timeout(2000)
                         found = await _check_indicator_strict(bpage, indicator)
 
                     if found:
                         logger.info(f"Login SUCCESS for {site['url']} (indicator found)")
                     else:
-                        elapsed = (time.time() - start) * 1000
                         await browser.close()
                         return {
                             "status": "critical",
-                            "response_time_ms": elapsed,
+                            "response_time_ms": actual_response_ms,
                             "status_code": 200,
                             "error_message": (
                                 f"Login failed — expected '{expected_page}' in URL "
@@ -326,12 +324,10 @@ async def run_login_check(
                             ),
                         }
                 else:
-                    # No indicator, not on expected page
-                    elapsed = (time.time() - start) * 1000
                     await browser.close()
                     return {
                         "status": "critical",
-                        "response_time_ms": elapsed,
+                        "response_time_ms": actual_response_ms,
                         "status_code": 200,
                         "error_message": (
                             f"Login failed — expected '{expected_page}' in URL "
@@ -388,12 +384,11 @@ async def run_login_check(
                     pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
                     page_results.append(pg_result)
 
-            elapsed = (time.time() - start) * 1000
             await browser.close()
 
             return {
                 "status": overall_status,
-                "response_time_ms": elapsed,
+                "response_time_ms": actual_response_ms,
                 "status_code": 200,
                 "error_message": next(
                     (r["error"] for r in page_results if r["error"]), ""
@@ -450,10 +445,10 @@ async def run_multi_page_check(
                 except Exception:
                     pass
                 try:
-                    await bpage.wait_for_load_state("networkidle", timeout=15000)
+                    await bpage.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
-                await bpage.wait_for_timeout(5000)
+                await bpage.wait_for_timeout(2000)
 
             # Check each page
             overall_status = "ok"
