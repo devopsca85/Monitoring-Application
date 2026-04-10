@@ -102,7 +102,7 @@ export default function AdminUsers() {
                       {u.is_active ? 'Active' : 'Disabled'}
                     </span>
                   </td>
-                  <td>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}</td>
+                  <td>{u.created_at ? new Date(u.created_at).toLocaleDateString('en-US', { timeZone: 'America/Chicago' }) : '-'}</td>
                   <td style={{ display: 'flex', gap: '8px' }}>
                     <button onClick={() => openEdit(u)} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>Edit</button>
                     <button onClick={() => handleDelete(u)} className="btn btn-danger" style={{ padding: '4px 12px', fontSize: '12px' }}>Delete</button>

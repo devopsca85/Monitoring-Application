@@ -35,7 +35,7 @@ function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login onLogin={setUser} />} />
-        <Route path="*" element={<Navigate to="/login" />} />
+        <Route path="*" element={<NavigateToLogin />} />
       </Routes>
     );
   }
@@ -68,6 +68,12 @@ function App() {
       </div>
     </div>
   );
+}
+
+// Preserves query params (like ?code=xxx) when redirecting to /login
+function NavigateToLogin() {
+  const location = useLocation();
+  return <Navigate to={`/login${location.search}`} replace />;
 }
 
 function TopBar({ user, setUser }) {

@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getSite, getResults, triggerCheck } from '../services/api';
+import { formatCST, formatCSTTime } from '../services/time';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -45,7 +46,7 @@ export default function SiteDetail() {
   if (!site) return <div>Loading...</div>;
 
   const chartData = results.map((r) => ({
-    time: new Date(r.checked_at).toLocaleTimeString(),
+    time: formatCSTTime(r.checked_at),
     response_time: r.response_time_ms,
     status: r.status,
   }));
@@ -103,7 +104,7 @@ export default function SiteDetail() {
           <div className="card-header">
             <h3>Subpage Status (Latest Check)</h3>
             <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-              {latestResult ? new Date(latestResult.checked_at).toLocaleString() : ''}
+              {latestResult ? formatCST(latestResult.checked_at) : ''}
             </span>
           </div>
           <div className="table-container">
@@ -219,7 +220,7 @@ export default function SiteDetail() {
                       <td style={{ textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
                         {hasSubpages && (isExpanded ? '▼' : '▶')}
                       </td>
-                      <td>{new Date(r.checked_at).toLocaleString()}</td>
+                      <td>{formatCST(r.checked_at)}</td>
                       <td><span className={`badge badge-${r.status}`}>{r.status}</span></td>
                       <td style={{ fontVariantNumeric: 'tabular-nums' }}>{r.response_time_ms?.toFixed(0)}ms</td>
                       <td>{r.status_code || '-'}</td>

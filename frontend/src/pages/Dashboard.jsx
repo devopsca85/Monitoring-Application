@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { getDashboardStats, getAlerts, getSitesStatus, getAlertHistory, getSlownessAnalysis } from '../services/api';
+import { formatCST, formatCSTShort, formatCSTHour } from '../services/time';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -82,16 +83,6 @@ function NextCheckTimer({ lastCheckedAt, intervalMinutes, isActive }) {
       {isOverdue ? 'Running...' : formatCountdown(remaining)}
     </span>
   );
-}
-
-function formatCST(dateStr) {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString('en-US', {
-    timeZone: 'America/Chicago',
-    month: 'short', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: true,
-  }) + ' CST';
 }
 
 export default function Dashboard() {
@@ -307,9 +298,7 @@ export default function Dashboard() {
                   <ResponsiveContainer width="100%" height={180}>
                     <BarChart data={site.hourly_data.map((d) => ({
                       ...d,
-                      hour_cst: new Date(d.hour + ':00Z').toLocaleString('en-US', {
-                        timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hour12: true,
-                      }),
+                      hour_cst: formatCSTHour(d.hour + ':00Z'),
                     }))}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                       <XAxis dataKey="hour_cst" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={50} />
@@ -343,10 +332,10 @@ export default function Dashboard() {
                     {site.slow_windows.map((w, i) => (
                       <tr key={i} style={{ background: w.ongoing ? 'rgba(229,62,62,0.04)' : undefined }}>
                         <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
-                          {new Date(w.start).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })} CST
+                          {formatCSTShort(w.start)}
                         </td>
                         <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>
-                          {new Date(w.end).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })} CST
+                          {formatCSTShort(w.end)}
                         </td>
                         <td style={{ fontWeight: 600, color: 'var(--color-status-warning)' }}>{w.duration_minutes} min</td>
                         <td>{w.check_count}</td>

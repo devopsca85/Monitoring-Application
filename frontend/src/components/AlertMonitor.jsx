@@ -2,14 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAlerts, acknowledgeAlerts } from '../services/api';
 import { playAlarmBeep, startAlarmLoop, stopAlarmLoop } from '../services/alarm';
-
-function formatCST(dateStr) {
-  if (!dateStr) return '';
-  return new Date(dateStr).toLocaleString('en-US', {
-    timeZone: 'America/Chicago',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
-  }) + ' CST';
-}
+import { formatCSTTime } from '../services/time';
 
 export default function AlertMonitor() {
   const [activeAlerts, setActiveAlerts] = useState([]);

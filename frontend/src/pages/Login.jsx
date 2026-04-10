@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { login, register, getMe, getSsoConfig, ssoCallback } from '../services/api';
 import api from '../services/api';
@@ -14,11 +14,41 @@ export default function Login({ onLogin }) {
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const [ssoAuthUrl, setSsoAuthUrl] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
+  const ssoHandled = useRef(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
+  // Handle SSO callback FIRST — before anything else
   useEffect(() => {
-    // Check setup + SSO config in parallel
+    const code = searchParams.get('code');
+    if (!code || ssoHandled.current) return;
+
+    // Mark as handled immediately to prevent double-fire
+    ssoHandled.current = true;
+    setSsoLoading(true);
+    setChecking(false);
+    setError('');
+
+    // Clear code from URL immediately so refresh doesn't retry
+    window.history.replaceState({}, '', '/login');
+
+    ssoCallback({ code })
+      .then(async (res) => {
+        localStorage.setItem('token', res.data.access_token);
+        const me = await getMe();
+        onLogin(me.data);
+        navigate('/');
+      })
+      .catch((err) => {
+        setError(err.response?.data?.detail || 'Azure SSO login failed');
+        setSsoLoading(false);
+      });
+  }, []);
+
+  // Load setup check + SSO config (only if not handling callback)
+  useEffect(() => {
+    if (ssoHandled.current) return;
+
     Promise.all([
       api.get('/auth/setup-check').then((r) => setIsSetup(r.data.needs_setup)).catch(() => setIsSetup(false)),
       getSsoConfig().then((r) => {
@@ -29,28 +59,6 @@ export default function Login({ onLogin }) {
       }).catch(() => {}),
     ]).finally(() => setChecking(false));
   }, []);
-
-  // Handle SSO callback (code in URL params)
-  useEffect(() => {
-    const code = searchParams.get('code');
-    if (code && !ssoLoading) {
-      setSsoLoading(true);
-      setError('');
-      ssoCallback({ code })
-        .then(async (res) => {
-          localStorage.setItem('token', res.data.access_token);
-          const me = await getMe();
-          onLogin(me.data);
-          navigate('/');
-        })
-        .catch((err) => {
-          setError(err.response?.data?.detail || 'Azure SSO login failed');
-          // Clear code from URL
-          window.history.replaceState({}, '', '/login');
-        })
-        .finally(() => setSsoLoading(false));
-    }
-  }, [searchParams]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

@@ -162,6 +162,16 @@ def _cleanup_orphaned_alerts(db: Session):
         logging.getLogger(__name__).info(f"Cleaned up {cleaned} orphaned alerts")
 
 
+def _to_iso_utc(dt):
+    """Convert naive datetime to ISO string with UTC timezone marker."""
+    if not dt:
+        return None
+    s = dt.isoformat()
+    if '+' not in s and 'Z' not in s:
+        s += '+00:00'
+    return s
+
+
 def _format_alert(a, sites_map):
     """Format an alert record as a plain dict."""
     s = sites_map.get(a.site_id)
@@ -174,8 +184,8 @@ def _format_alert(a, sites_map):
         "message": a.message or "",
         "notified": bool(a.notified or False),
         "resolved": bool(a.resolved or False),
-        "created_at": a.created_at.isoformat() if a.created_at else None,
-        "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+        "created_at": _to_iso_utc(a.created_at),
+        "resolved_at": _to_iso_utc(a.resolved_at),
     }
 
 
@@ -366,7 +376,7 @@ def sites_status(
             "slow_threshold_ms": s.slow_threshold_ms or 10000,
             "is_active": s.is_active,
             "last_status": r.status.value if r else None,
-            "last_checked_at": r.checked_at.isoformat() if r and r.checked_at else None,
+            "last_checked_at": _to_iso_utc(r.checked_at) if r else None,
             "last_response_time_ms": r.response_time_ms if r else None,
             "is_slow": (r.response_time_ms or 0) > (s.slow_threshold_ms or 10000) if r else False,
             "last_status_code": r.status_code if r else None,
@@ -424,8 +434,8 @@ def slowness_analysis(
                         avg_rt = sum(wr.response_time_ms or 0 for wr in window_results) / len(window_results)
                         max_rt = max(wr.response_time_ms or 0 for wr in window_results)
                         slow_windows.append({
-                            "start": window_start.isoformat(),
-                            "end": window_end.isoformat(),
+                            "start": _to_iso_utc(window_start),
+                            "end": _to_iso_utc(window_end),
                             "duration_minutes": round(duration_min),
                             "check_count": len(window_results),
                             "avg_response_ms": round(avg_rt),
@@ -442,8 +452,8 @@ def slowness_analysis(
                 avg_rt = sum(wr.response_time_ms or 0 for wr in window_results) / len(window_results)
                 max_rt = max(wr.response_time_ms or 0 for wr in window_results)
                 slow_windows.append({
-                    "start": window_start.isoformat(),
-                    "end": window_end.isoformat(),
+                    "start": _to_iso_utc(window_start),
+                    "end": _to_iso_utc(window_end),
                     "duration_minutes": round(duration_min),
                     "check_count": len(window_results),
                     "avg_response_ms": round(avg_rt),

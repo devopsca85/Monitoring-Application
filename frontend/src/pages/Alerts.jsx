@@ -1,16 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus, getResults } from '../services/api';
-
-function formatCST(dateStr) {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString('en-US', {
-    timeZone: 'America/Chicago',
-    year: 'numeric', month: 'short', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: true,
-  }) + ' CST';
-}
+import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus } from '../services/api';
+import { formatCST } from '../services/time';
 
 function formatDuration(startStr, endStr) {
   if (!startStr) return '-';
