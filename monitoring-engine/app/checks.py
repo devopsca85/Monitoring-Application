@@ -71,12 +71,36 @@ async def run_uptime_check(site: dict) -> dict:
 
 
 def _normalize_selector(indicator: str) -> list[str]:
+    """Generate CSS selectors to try from user input.
+
+    Handles all formats:
+      "#myId"                         -> [#myId]
+      ".myClass"                      -> [.myClass]
+      "ul#breadcrumbs"                -> [ul#breadcrumbs]  (already valid)
+      "div.container"                 -> [div.container]   (already valid)
+      "input[type='text']"            -> [input[type='text']]
+      "myId"                          -> [#myId, myId]     (plain word = try as ID)
+      "myId.table.striped"            -> [#myId.table.striped, myId.table.striped]
+    """
     selectors = [indicator]
-    if not indicator.startswith(("#", ".", "[", "*", ":")):
-        selectors.insert(0, f"#{indicator}")
-    if "." in indicator and not indicator.startswith(("#", ".")):
-        parts = indicator.split(".", 1)
-        selectors.insert(0, f"#{parts[0]}.{parts[1]}")
+
+    # If it contains any CSS combinator characters, it's already a proper selector
+    has_combinator = any(c in indicator for c in ('#', '.', '[', ':', '>', '+', '~', ' '))
+
+    if has_combinator:
+        # Already a valid CSS selector like "ul#breadcrumbs" or "div.class"
+        # Only add #-prefixed version if it's a plain word with dots (like "myId.class")
+        if '.' in indicator and '#' not in indicator and not indicator[0].isalpha():
+            pass  # e.g. ".myClass" — already valid
+        elif '.' in indicator and '#' not in indicator and '[' not in indicator:
+            # Could be "tabName.class1.class2" — also try as #tabName.class1.class2
+            parts = indicator.split(".", 1)
+            if parts[0].isidentifier():
+                selectors.append(f"#{parts[0]}.{parts[1]}")
+        return selectors
+
+    # Plain word without any CSS characters — try as #id first, then as-is
+    selectors.insert(0, f"#{indicator}")
     return selectors
 
 
@@ -405,10 +429,7 @@ async def run_login_check(
                         # Check expected CSS element
                         if pg.get("expected_element"):
                             selector = pg["expected_element"].strip()
-                            # Normalize: add # if looks like an ID
-                            selectors_to_try = [selector]
-                            if not selector.startswith(("#", ".", "[", "*")):
-                                selectors_to_try.insert(0, f"#{selector}")
+                            selectors_to_try = _normalize_selector(selector)
 
                             found = False
                             for sel in selectors_to_try:
