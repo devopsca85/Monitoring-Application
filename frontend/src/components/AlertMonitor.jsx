@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAlerts, acknowledgeAlerts } from '../services/api';
 import { playAlarmBeep, startAlarmLoop, stopAlarmLoop } from '../services/alarm';
-import { formatCSTTime } from '../services/time';
+
+const TOAST_REPEAT_MINUTES = 30; // Repeat toast for ongoing alerts every 30 min
 
 export default function AlertMonitor() {
   const [activeAlerts, setActiveAlerts] = useState([]);
@@ -10,19 +11,30 @@ export default function AlertMonitor() {
   const [warningDismissed, setWarningDismissed] = useState(false);
   const [toasts, setToasts] = useState([]);
   const knownAlertIds = useRef(null);
+  const lastToastTime = useRef({}); // { alertId: timestamp }
   const warningTimerRef = useRef(null);
   const navigate = useNavigate();
 
   const addToast = useCallback((title, message, type = 'critical') => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev.slice(-4), { id, title, message, type }]);
-    // Auto-hide after 5 seconds
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
   }, []);
 
-  // Separate alerts by severity
   const criticalAlerts = activeAlerts.filter((a) => a.alert_type === 'critical' || !a.alert_type);
   const warningAlerts = activeAlerts.filter((a) => a.alert_type === 'warning');
+
+  // Should we show a toast for this alert?
+  const shouldToast = useCallback((alertId) => {
+    const last = lastToastTime.current[alertId];
+    if (!last) return true; // Never toasted
+    const elapsed = (Date.now() - last) / 1000 / 60; // minutes
+    return elapsed >= TOAST_REPEAT_MINUTES;
+  }, []);
+
+  const markToasted = useCallback((alertId) => {
+    lastToastTime.current[alertId] = Date.now();
+  }, []);
 
   // Poll every 10 seconds
   useEffect(() => {
@@ -35,38 +47,55 @@ export default function AlertMonitor() {
         const previousIds = knownAlertIds.current;
 
         if (previousIds === null) {
-          // First load
+          // First load — only toast for NEW alerts, not existing ones
+          // Show alarm for critical but no toasts (don't spam on page load)
           const crits = alerts.filter((a) => a.alert_type === 'critical' || !a.alert_type);
           if (crits.length > 0) {
             playAlarmBeep();
             setAlarmAcknowledged(false);
           }
+          // Mark all existing alerts as "toasted" so they don't pop on first load
           for (const a of alerts) {
-            addToast(`Alert: ${a.site_name || 'Site #' + a.site_id}`, a.message || '', a.alert_type || 'critical');
+            markToasted(a.id);
           }
         } else {
+          // Subsequent loads
           for (const a of alerts) {
             if (!previousIds.has(a.id)) {
+              // Brand new alert — always toast
               addToast(`Alert: ${a.site_name || 'Site #' + a.site_id}`, a.message || '', a.alert_type || 'critical');
+              markToasted(a.id);
               if (a.alert_type === 'critical' || !a.alert_type) {
                 playAlarmBeep();
                 setAlarmAcknowledged(false);
               }
+            } else if (shouldToast(a.id)) {
+              // Ongoing alert — repeat toast every TOAST_REPEAT_MINUTES
+              addToast(`Ongoing: ${a.site_name || 'Site #' + a.site_id}`, a.message || '', a.alert_type || 'critical');
+              markToasted(a.id);
             }
           }
           if (alerts.length === 0 && previousIds.size > 0) {
             addToast('All Clear', 'All sites are back online', 'ok');
           }
         }
+
+        // Clean up lastToastTime for resolved alerts
+        for (const id of Object.keys(lastToastTime.current)) {
+          if (!currentIds.has(parseInt(id))) {
+            delete lastToastTime.current[id];
+          }
+        }
+
         knownAlertIds.current = currentIds;
       }).catch((e) => console.error('AlertMonitor poll failed:', e));
     };
     poll();
     const id = setInterval(poll, 10000);
     return () => clearInterval(id);
-  }, [addToast]);
+  }, [addToast, shouldToast, markToasted]);
 
-  // Auto-hide warning banner after 30 seconds
+  // Warning banner auto-hide after 30s
   useEffect(() => {
     if (warningAlerts.length > 0 && criticalAlerts.length === 0) {
       setWarningDismissed(false);
@@ -78,7 +107,7 @@ export default function AlertMonitor() {
     return () => { if (warningTimerRef.current) clearTimeout(warningTimerRef.current); };
   }, [warningAlerts.length, criticalAlerts.length]);
 
-  // Alarm sound — only for critical
+  // Alarm sound — critical only
   useEffect(() => {
     if (criticalAlerts.length > 0 && !alarmAcknowledged) {
       startAlarmLoop();
@@ -88,12 +117,11 @@ export default function AlertMonitor() {
     return () => stopAlarmLoop();
   }, [criticalAlerts.length, alarmAcknowledged]);
 
-  // No alerts — render nothing
   if (activeAlerts.length === 0 && toasts.length === 0) return null;
 
   return (
     <>
-      {/* CRITICAL banner — red, "sites down" */}
+      {/* CRITICAL banner */}
       {criticalAlerts.length > 0 && (
         <div style={{
           background: 'linear-gradient(90deg, #e53e3e, #c53030)',
@@ -111,7 +139,7 @@ export default function AlertMonitor() {
               CRITICAL: {criticalAlerts.length} site{criticalAlerts.length > 1 ? 's' : ''} down
             </span>
             <span style={{ fontSize: '12px', opacity: 0.85, marginLeft: '12px' }}>
-              {criticalAlerts.map((a) => a.site_name || `Site #${a.site_id}`).join(', ')}
+              {[...new Set(criticalAlerts.map((a) => a.site_name || `Site #${a.site_id}`))].join(', ')}
             </span>
           </div>
           <button onClick={() => navigate('/alerts')} style={{
@@ -131,7 +159,7 @@ export default function AlertMonitor() {
         </div>
       )}
 
-      {/* WARNING banner — orange, auto-hides after 30s */}
+      {/* WARNING banner — auto-hides after 30s */}
       {warningAlerts.length > 0 && criticalAlerts.length === 0 && !warningDismissed && (
         <div style={{
           background: 'linear-gradient(90deg, #dd6b20, #c05621)',
@@ -144,7 +172,7 @@ export default function AlertMonitor() {
               WARNING: {warningAlerts.length} site{warningAlerts.length > 1 ? 's' : ''} slow
             </span>
             <span style={{ fontSize: '12px', opacity: 0.85, marginLeft: '12px' }}>
-              {warningAlerts.map((a) => a.site_name || `Site #${a.site_id}`).join(', ')}
+              {[...new Set(warningAlerts.map((a) => a.site_name || `Site #${a.site_id}`))].join(', ')}
             </span>
           </div>
           <button onClick={() => navigate('/alerts')} style={{
@@ -155,7 +183,7 @@ export default function AlertMonitor() {
         </div>
       )}
 
-      {/* Toast notifications */}
+      {/* Toasts */}
       <div style={{
         position: 'fixed', top: 70, right: 24, zIndex: 9999,
         display: 'flex', flexDirection: 'column', gap: '10px',

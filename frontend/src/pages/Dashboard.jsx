@@ -119,13 +119,17 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
+  // Compute live warning count from sitesStatus (includes slow sites)
+  const liveWarnings = sitesStatus.length > 0
+    ? sitesStatus.filter((s) => s.last_status === 'warning' || s.is_slow).length
+    : (stats?.sites_warning || 0);
+  const liveDown = stats?.sites_down || 0;
+  const liveUp = stats ? Math.max(0, stats.sites_up - (liveWarnings - (stats.sites_warning || 0))) : 0;
+
   const pieData = stats ? [
-    { name: 'Up', value: stats.sites_up, color: PIE_COLORS.up },
-    { name: 'Down', value: stats.sites_down, color: PIE_COLORS.down },
-    { name: 'Warning', value: stats.sites_warning, color: PIE_COLORS.warning },
-    ...(stats.total_sites - stats.sites_up - stats.sites_down - stats.sites_warning > 0
-      ? [{ name: 'No Data', value: stats.total_sites - stats.sites_up - stats.sites_down - stats.sites_warning, color: PIE_COLORS.unmonitored }]
-      : []),
+    { name: 'Up', value: Math.max(0, (stats.total_sites || 0) - liveDown - liveWarnings), color: PIE_COLORS.up },
+    { name: 'Down', value: liveDown, color: PIE_COLORS.down },
+    { name: 'Warning/Slow', value: liveWarnings, color: PIE_COLORS.warning },
   ].filter((d) => d.value > 0) : [];
 
   return (
@@ -156,8 +160,12 @@ export default function Dashboard() {
           <div className="stat-label">Sites Down</div>
         </div>
         <div className="stat-card warning">
-          <div className="stat-value">{stats?.sites_warning ?? '-'}</div>
-          <div className="stat-label">Warnings</div>
+          <div className="stat-value">
+            {sitesStatus.length > 0
+              ? sitesStatus.filter((s) => s.last_status === 'warning' || s.is_slow).length
+              : (stats?.sites_warning ?? '-')}
+          </div>
+          <div className="stat-label">Warnings / Slow</div>
         </div>
         <div className="stat-card info">
           <div className="stat-value">{stats?.avg_response_time ?? '-'}<span style={{ fontSize: '16px' }}>ms</span></div>
