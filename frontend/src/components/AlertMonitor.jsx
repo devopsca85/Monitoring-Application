@@ -14,8 +14,10 @@ function formatCST(dateStr) {
 export default function AlertMonitor() {
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [alarmAcknowledged, setAlarmAcknowledged] = useState(false);
+  const [warningDismissed, setWarningDismissed] = useState(false);
   const [toasts, setToasts] = useState([]);
   const knownAlertIds = useRef(null);
+  const warningTimerRef = useRef(null);
   const navigate = useNavigate();
 
   const addToast = useCallback((title, message, type = 'critical') => {
@@ -71,6 +73,18 @@ export default function AlertMonitor() {
     return () => clearInterval(id);
   }, [addToast]);
 
+  // Auto-hide warning banner after 30 seconds
+  useEffect(() => {
+    if (warningAlerts.length > 0 && criticalAlerts.length === 0) {
+      setWarningDismissed(false);
+      warningTimerRef.current = setTimeout(() => setWarningDismissed(true), 30000);
+    } else {
+      setWarningDismissed(false);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    }
+    return () => { if (warningTimerRef.current) clearTimeout(warningTimerRef.current); };
+  }, [warningAlerts.length, criticalAlerts.length]);
+
   // Alarm sound — only for critical
   useEffect(() => {
     if (criticalAlerts.length > 0 && !alarmAcknowledged) {
@@ -120,8 +134,8 @@ export default function AlertMonitor() {
         </div>
       )}
 
-      {/* WARNING banner — orange, "sites slow/warning" */}
-      {warningAlerts.length > 0 && criticalAlerts.length === 0 && (
+      {/* WARNING banner — orange, auto-hides after 30s */}
+      {warningAlerts.length > 0 && criticalAlerts.length === 0 && !warningDismissed && (
         <div style={{
           background: 'linear-gradient(90deg, #dd6b20, #c05621)',
           color: 'white', padding: '8px 24px',

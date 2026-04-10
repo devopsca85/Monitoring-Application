@@ -347,24 +347,87 @@ async def run_login_check(
                     }
 
                     try:
-                        await bpage.goto(
+                        resp = await bpage.goto(
                             pg["page_url"],
                             timeout=settings.BROWSER_TIMEOUT_MS,
                             wait_until="domcontentloaded",
                         )
+                        await bpage.wait_for_timeout(2000)
 
-                        if pg.get("expected_element"):
-                            try:
-                                await bpage.wait_for_selector(
-                                    pg["expected_element"], timeout=10000
+                        # Check HTTP status code
+                        status_code = resp.status if resp else 0
+                        if status_code >= 400:
+                            pg_result["status"] = "critical"
+                            pg_result["error"] = f"HTTP {status_code}"
+                            overall_status = "critical"
+                            pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
+                            page_results.append(pg_result)
+                            continue
+
+                        # Check URL — did the page redirect to login or error page?
+                        actual_url = bpage.url.lower()
+                        expected_path = pg["page_url"].lower().rstrip("/")
+                        login_keywords = ["login", "signin", "logon", "auth", "unauthorized"]
+                        error_keywords = ["error", "404", "not-found", "notfound", "page-not-found"]
+
+                        if any(kw in actual_url for kw in login_keywords):
+                            pg_result["status"] = "critical"
+                            pg_result["error"] = f"Redirected to login page: {bpage.url}"
+                            overall_status = "critical"
+                            pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
+                            page_results.append(pg_result)
+                            continue
+
+                        if any(kw in actual_url for kw in error_keywords):
+                            pg_result["status"] = "critical"
+                            pg_result["error"] = f"Redirected to error page: {bpage.url}"
+                            overall_status = "critical"
+                            pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
+                            page_results.append(pg_result)
+                            continue
+
+                        # Check if URL path matches expected
+                        from urllib.parse import urlparse
+                        expected_parsed = urlparse(pg["page_url"])
+                        actual_parsed = urlparse(bpage.url)
+                        if expected_parsed.path.rstrip("/") != actual_parsed.path.rstrip("/"):
+                            # URL doesn't match — might be a redirect
+                            # Only fail if no CSS selector is set to verify
+                            if not pg.get("expected_element"):
+                                pg_result["status"] = "warning"
+                                pg_result["error"] = (
+                                    f"URL mismatch: expected {expected_parsed.path} "
+                                    f"but got {actual_parsed.path}"
                                 )
-                            except Exception:
+                                if overall_status == "ok":
+                                    overall_status = "warning"
+
+                        # Check expected CSS element
+                        if pg.get("expected_element"):
+                            selector = pg["expected_element"].strip()
+                            # Normalize: add # if looks like an ID
+                            selectors_to_try = [selector]
+                            if not selector.startswith(("#", ".", "[", "*")):
+                                selectors_to_try.insert(0, f"#{selector}")
+
+                            found = False
+                            for sel in selectors_to_try:
+                                try:
+                                    el = await bpage.query_selector(sel)
+                                    if el:
+                                        found = True
+                                        break
+                                except Exception:
+                                    pass
+
+                            if not found:
                                 pg_result["status"] = "critical"
                                 pg_result["error"] = (
-                                    f"Element '{pg['expected_element']}' not found"
+                                    f"Element '{selector}' not found on {bpage.url}"
                                 )
                                 overall_status = "critical"
 
+                        # Check expected text
                         if pg.get("expected_text"):
                             content = await bpage.content()
                             if pg["expected_text"] not in content:
@@ -375,6 +438,19 @@ async def run_login_check(
                                 )
                                 if overall_status == "ok":
                                     overall_status = "warning"
+
+                        # If no element or text checks AND page loaded fine,
+                        # check that page body has meaningful content
+                        if not pg.get("expected_element") and not pg.get("expected_text"):
+                            try:
+                                body_text = await bpage.inner_text("body")
+                                if len(body_text.strip()) < 50:
+                                    pg_result["status"] = "warning"
+                                    pg_result["error"] = "Page has very little content — may be an error page"
+                                    if overall_status == "ok":
+                                        overall_status = "warning"
+                            except Exception:
+                                pass
 
                     except Exception as e:
                         pg_result["status"] = "critical"
