@@ -1,14 +1,15 @@
 // ============================================================
-// GLOBAL ALARM — plays sound even when user is on other pages
-// Uses multiple strategies to ensure audio plays
+// GLOBAL ALARM — custom audio or generated tone
 // ============================================================
 
-let alarmAudio = null;
+let defaultAudio = null;
+let customAudio = null;
+let customLoaded = false;
+let customFailed = false;
 let alarmCtx = null;
 let alarmInterval = null;
 let unlocked = false;
 
-// Strategy 1: Generate WAV blob and play via <audio>
 function makeWavUrl() {
   const sr = 8000, dur = 0.8, n = Math.floor(sr * dur);
   const buf = new ArrayBuffer(44 + n * 2);
@@ -26,46 +27,37 @@ function makeWavUrl() {
   return URL.createObjectURL(new Blob([buf], {type:'audio/wav'}));
 }
 
-let customAudioChecked = false;
-
-function getAudio() {
-  if (!alarmAudio) {
-    // Try custom uploaded audio first
-    if (!customAudioChecked) {
-      customAudioChecked = true;
-      const custom = new Audio('/api/v1/admin/alarm-audio/file');
-      custom.volume = 0.8;
-      custom.addEventListener('canplaythrough', () => {
-        alarmAudio = custom;
-      }, { once: true });
-      custom.addEventListener('error', () => {
-        // No custom audio — use generated WAV
-        alarmAudio = new Audio(makeWavUrl());
-        alarmAudio.volume = 0.8;
-        alarmAudio.load();
-      }, { once: true });
-      custom.load();
-      // Return generated wav for now until custom loads
-      alarmAudio = new Audio(makeWavUrl());
-      alarmAudio.volume = 0.8;
-      alarmAudio.load();
-    } else {
-      alarmAudio = new Audio(makeWavUrl());
-      alarmAudio.volume = 0.8;
-      alarmAudio.load();
-    }
+function getDefaultAudio() {
+  if (!defaultAudio) {
+    defaultAudio = new Audio(makeWavUrl());
+    defaultAudio.volume = 0.8;
+    defaultAudio.load();
   }
-  return alarmAudio;
+  return defaultAudio;
 }
 
-// Force reload custom audio (call after upload)
-export function reloadAlarmAudio() {
-  alarmAudio = null;
-  customAudioChecked = false;
-  getAudio();
+// Load custom audio from server
+function loadCustomAudio() {
+  if (customLoaded || customFailed) return;
+  const a = new Audio('/api/v1/admin/alarm-audio/file?' + Date.now());
+  a.volume = 0.8;
+  a.addEventListener('canplaythrough', () => {
+    customAudio = a;
+    customLoaded = true;
+    console.log('ALARM: Custom audio loaded');
+  }, { once: true });
+  a.addEventListener('error', () => {
+    customFailed = true;
+    console.log('ALARM: No custom audio, using default');
+  }, { once: true });
+  a.load();
 }
 
-// Strategy 2: Web Audio API oscillator
+// Try loading custom audio on init
+if (typeof window !== 'undefined') {
+  loadCustomAudio();
+}
+
 function beepOscillator() {
   try {
     if (!alarmCtx) alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -77,20 +69,18 @@ function beepOscillator() {
     o.frequency.setValueAtTime(880,t); o.frequency.setValueAtTime(660,t+.2); o.frequency.setValueAtTime(880,t+.4);
     g.gain.setValueAtTime(.4,t); g.gain.exponentialRampToValueAtTime(.01,t+.6);
     o.start(t); o.stop(t+.6);
-    return true;
-  } catch { return false; }
+  } catch {}
 }
 
-// Play alarm — tries Audio element first, falls back to oscillator
 export function playAlarmBeep() {
-  // Try Audio element
+  // Pick custom audio if loaded, otherwise default
+  const audio = customAudio || getDefaultAudio();
   try {
-    const a = getAudio();
-    a.currentTime = 0;
-    const p = a.play();
+    audio.currentTime = 0;
+    const p = audio.play();
     if (p && p.then) {
       p.then(() => { unlocked = true; })
-       .catch(() => { beepOscillator(); });
+       .catch(() => beepOscillator());
     }
   } catch {
     beepOscillator();
@@ -104,43 +94,34 @@ export function startAlarmLoop() {
 }
 
 export function stopAlarmLoop() {
-  if (alarmInterval) {
-    clearInterval(alarmInterval);
-    alarmInterval = null;
-  }
+  if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; }
 }
 
-// Unlock audio on ANY user interaction — this is the key to making it work
+export function reloadAlarmAudio() {
+  customAudio = null;
+  customLoaded = false;
+  customFailed = false;
+  loadCustomAudio();
+}
+
+// Unlock on user interaction
 function tryUnlock() {
   if (unlocked) return;
   try {
-    const a = getAudio();
-    // Play a tiny silent moment to unlock
-    const origVol = a.volume;
-    a.volume = 0.001;
-    a.currentTime = 0;
+    const a = getDefaultAudio();
+    a.volume = 0.001; a.currentTime = 0;
     const p = a.play();
-    if (p && p.then) {
-      p.then(() => { a.pause(); a.volume = origVol; a.currentTime = 0; unlocked = true; }).catch(() => {});
-    }
+    if (p && p.then) p.then(() => { a.pause(); a.volume = 0.8; a.currentTime = 0; unlocked = true; }).catch(() => {});
   } catch {}
-  // Also unlock Web Audio
   try {
     if (!alarmCtx) alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (alarmCtx.state === 'suspended') alarmCtx.resume();
   } catch {}
 }
 
-// Attach to ALL interaction events, keep trying until unlocked
 if (typeof document !== 'undefined') {
-  const events = ['click','keydown','keyup','mousedown','mouseup','touchstart','touchend','pointerdown','scroll'];
-  const handler = () => {
-    tryUnlock();
-    if (unlocked) {
-      events.forEach(e => document.removeEventListener(e, handler, true));
-    }
-  };
-  events.forEach(e => document.addEventListener(e, handler, { capture: true, passive: true }));
-  // Also try after page load
+  const evts = ['click','keydown','mousedown','touchstart','pointerdown'];
+  const h = () => { tryUnlock(); if (unlocked) evts.forEach(e => document.removeEventListener(e, h, true)); };
+  evts.forEach(e => document.addEventListener(e, h, { capture: true, passive: true }));
   window.addEventListener('load', () => setTimeout(tryUnlock, 500));
 }
