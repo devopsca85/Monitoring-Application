@@ -157,9 +157,7 @@ az keyvault secret set --vault-name monitor-kv --name ENCRYPTION-KEY --value "yo
 ## Environment Variables
 
 See `backend/.env.example` for the full list of configuration options.
-
-## Design
-
+# Design
 UI follows the color scheme:
 - Primary Blue: `#007aff`
 - Navy: `#001e3f`
