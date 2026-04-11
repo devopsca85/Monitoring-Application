@@ -89,14 +89,17 @@ async def collect_performance_metrics(page) -> dict:
 
         return metrics or {}
     except Exception as e:
-        logger.warning(f"Performance metrics collection failed: {e}")
-        return {}
+        logger.error(f"Performance metrics collection failed: {e}")
+        return {"collection_failed": True, "error": str(e)[:200]}
 
 
 def format_perf_summary(metrics: dict, region: str = "") -> dict:
     """Create a summary dict suitable for storing in the details field."""
-    if not metrics:
-        return {"region": region}
+    if not metrics or metrics.get("collection_failed"):
+        result = {"region": region}
+        if metrics and metrics.get("error"):
+            result["perf_error"] = metrics["error"]
+        return result
 
     timing = metrics.get("timing", {})
 

@@ -12,10 +12,18 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _scheduler_task = None
+# Track running checks to prevent overlapping executions for same site
+_running_checks: set[int] = set()
 
 
-def _build_job(site: Site, db) -> dict:
-    """Build a monitoring job payload for the engine, including decrypted credentials."""
+def _build_job(site_id: int, db) -> dict | None:
+    """Build a monitoring job payload. Queries DB explicitly — no lazy loading."""
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        return None
+    if not site.is_active:
+        return None
+
     job = {
         "site_id": site.id,
         "site_url": site.url,
@@ -26,20 +34,24 @@ def _build_job(site: Site, db) -> dict:
     }
 
     if site.check_type.value in ("login", "multi_page"):
+        # FIX #6: Explicit query — no lazy loading / DetachedInstanceError
         cred = db.query(SiteCredential).filter(SiteCredential.site_id == site.id).first()
         if cred:
-            job["credentials"] = {
-                "login_url": cred.login_url,
-                "username_selector": cred.username_selector,
-                "password_selector": cred.password_selector,
-                "submit_selector": cred.submit_selector,
-                "success_indicator": cred.success_indicator or "",
-                "expected_page": cred.expected_page or "mainpage.aspx",
-                "username": decrypt_credential(cred.encrypted_username),
-                "password": decrypt_credential(cred.encrypted_password),
-            }
+            try:
+                job["credentials"] = {
+                    "login_url": cred.login_url,
+                    "username_selector": cred.username_selector,
+                    "password_selector": cred.password_selector,
+                    "submit_selector": cred.submit_selector,
+                    "success_indicator": cred.success_indicator or "",
+                    "expected_page": cred.expected_page or "mainpage.aspx",
+                    "username": decrypt_credential(cred.encrypted_username),
+                    "password": decrypt_credential(cred.encrypted_password),
+                }
+            except Exception as e:
+                logger.error(f"Failed to decrypt credentials for site {site.name}: {e}")
+                return None
 
-    if site.check_type.value in ("login", "multi_page"):
         pages = (
             db.query(SitePage)
             .filter(SitePage.site_id == site.id)
@@ -61,16 +73,15 @@ def _build_job(site: Site, db) -> dict:
 
 
 async def trigger_check_for_site(site_id: int) -> dict:
-    """Trigger a monitoring check for a single site. Returns the engine response."""
+    """Trigger a monitoring check for a single site."""
     db = SessionLocal()
     try:
-        site = db.query(Site).filter(Site.id == site_id).first()
-        if not site:
-            return {"error": "Site not found"}
-        if not site.is_active:
-            return {"error": "Site is paused"}
-
-        job = _build_job(site, db)
+        job = _build_job(site_id, db)
+        if not job:
+            return {"error": "Site not found or inactive"}
+    except Exception as e:
+        logger.error(f"Failed to build job for site {site_id}: {e}")
+        return {"error": str(e)}
     finally:
         db.close()
 
@@ -83,19 +94,17 @@ async def trigger_check_for_site(site_id: int) -> dict:
             resp.raise_for_status()
             return resp.json()
     except httpx.ConnectError:
-        logger.error(
-            f"Cannot reach monitoring engine at {settings.MONITORING_ENGINE_URL}"
-        )
-        return {"error": f"Monitoring engine not reachable at {settings.MONITORING_ENGINE_URL}"}
+        msg = f"Monitoring engine not reachable at {settings.MONITORING_ENGINE_URL}"
+        logger.error(msg)
+        return {"error": msg}
     except Exception as e:
-        logger.error(f"Failed to trigger check for site {site_id}: {e}")
+        logger.error(f"Check trigger failed for site {site_id}: {e}")
         return {"error": str(e)}
 
 
 async def _run_scheduler_loop():
     """Background loop that triggers checks for all active sites on their intervals."""
     logger.info("Background scheduler started")
-    # Track last check time per site
     last_checked: dict[int, float] = {}
 
     while True:
@@ -117,27 +126,43 @@ async def _run_scheduler_loop():
                 last = last_checked.get(site_id, 0)
 
                 if now - last >= interval_sec:
+                    # FIX #7: Skip if check already running for this site
+                    if site_id in _running_checks:
+                        logger.debug(f"Scheduler: '{name}' check still running, skipping")
+                        continue
+
                     logger.info(f"Scheduler: triggering check for '{name}' (site {site_id})")
+                    # FIX #7: Update last_checked optimistically but retry on failure
                     last_checked[site_id] = now
-                    # Fire and forget — don't block the loop
-                    asyncio.create_task(_safe_trigger(site_id, name))
+                    asyncio.create_task(_safe_trigger(site_id, name, last_checked))
 
         except Exception as e:
-            logger.error(f"Scheduler loop error: {e}")
+            logger.error(f"Scheduler loop error: {e}", exc_info=True)
 
-        await asyncio.sleep(15)  # Check every 15 seconds to support 1-min intervals
+        await asyncio.sleep(15)
 
 
-async def _safe_trigger(site_id: int, name: str):
+async def _safe_trigger(site_id: int, name: str, last_checked: dict):
+    """Execute a check with proper tracking to prevent overlaps."""
+    _running_checks.add(site_id)
     try:
         result = await trigger_check_for_site(site_id)
-        logger.info(f"Scheduler: check completed for '{name}': {result.get('status', result.get('error', 'unknown'))}")
+        status = result.get("status", result.get("error", "unknown"))
+        logger.info(f"Scheduler: '{name}' completed: {status}")
+
+        # FIX #7: On engine failure, reset last_checked to retry sooner
+        if "error" in result:
+            last_checked.pop(site_id, None)
+            logger.warning(f"Scheduler: '{name}' failed, will retry next cycle")
     except Exception as e:
-        logger.error(f"Scheduler: check failed for '{name}': {e}")
+        logger.error(f"Scheduler: '{name}' exception: {e}")
+        last_checked.pop(site_id, None)
+    finally:
+        _running_checks.discard(site_id)
 
 
 def start_scheduler():
-    """Start the background scheduler. Call from FastAPI startup."""
+    """Start the background scheduler."""
     global _scheduler_task
     _scheduler_task = asyncio.create_task(_run_scheduler_loop())
     logger.info("Background monitoring scheduler initialized")

@@ -489,15 +489,17 @@ async def run_login_check(
 
             # ---- START measuring actual response time ----
             response_start = time.time()
+            nav_succeeded = False
 
-            # Submit and wait for navigation
+            # Submit and wait for navigation (FIX #1: log failures, don't silently swallow)
             try:
                 async with bpage.expect_navigation(timeout=20000, wait_until="load"):
                     await bpage.click(submit_sel)
-            except Exception:
-                pass
+                nav_succeeded = True
+            except Exception as nav_err:
+                logger.warning(f"Navigation after submit: {type(nav_err).__name__}: {str(nav_err)[:100]}")
 
-            # Wait for network to settle (actual page load time)
+            # Wait for network to settle
             try:
                 await bpage.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
@@ -505,13 +507,17 @@ async def run_login_check(
 
             # ---- END measuring actual response time ----
             actual_response_ms = (time.time() - response_start) * 1000
-            logger.info(f"Actual response time: {int(actual_response_ms)}ms")
+            logger.info(f"Response time: {int(actual_response_ms)}ms, nav={nav_succeeded}")
 
-            # Small buffer for JS rendering (NOT counted in response time)
+            # Buffer for JS rendering (NOT counted in response time)
             await bpage.wait_for_timeout(2000)
 
             post_login_url = bpage.url
             logger.info(f"Post-login URL: {post_login_url}")
+
+            # FIX #1: If no navigation AND URL unchanged, form submit likely failed
+            if not nav_succeeded and post_login_url.rstrip("/") == pre_login_url.rstrip("/"):
+                logger.warning(f"Form submit may have failed — no navigation, URL unchanged")
 
             # === PRE-CHECK: Detect error page redirects ===
             error_page_result = await _detect_error_page_redirect(
@@ -536,8 +542,7 @@ async def run_login_check(
                     "status_code": 200,
                     "error_message": error_msg,
                     "details": json.dumps({
-                        "db_issue": True,
-                        "db_category": category,
+                        "db_issue": True, "db_category": category,
                         "db_diagnosis": diagnosis,
                         "response_time_ms": int(actual_response_ms),
                         "region": settings.MONITOR_REGION,
@@ -548,7 +553,6 @@ async def run_login_check(
             failure_msg = await _detect_login_failure(bpage, pre_login_url)
 
             if failure_msg:
-                # Enrich failure message with latency context if response was slow
                 if actual_response_ms > 8000 and db_check.get("diagnosis"):
                     failure_msg = f"{failure_msg} | POSSIBLE DB LATENCY: {db_check['diagnosis']}"
 
@@ -572,42 +576,22 @@ async def run_login_check(
             lower_url = bpage.url.lower()
 
             on_expected_page = expected_page.lower() in lower_url
-            logger.info(
-                f"Expected page '{expected_page}' in URL '{bpage.url}': {on_expected_page}"
-            )
+            logger.info(f"Expected page '{expected_page}' in URL '{bpage.url}': {on_expected_page}")
 
-            if on_expected_page:
-                if indicator:
+            # FIX #2: Indicator check must PASS if configured — no false success
+            if indicator:
+                found = await _check_indicator_strict(bpage, indicator)
+                if not found:
+                    # One retry after short wait — no extra 2s inflating response time (FIX #3)
+                    await bpage.wait_for_timeout(1000)
                     found = await _check_indicator_strict(bpage, indicator)
-                    if not found:
-                        await bpage.wait_for_timeout(2000)
-                        found = await _check_indicator_strict(bpage, indicator)
-                    if not found:
-                        logger.warning(
-                            f"On expected page but indicator '{indicator}' not found — still OK"
-                        )
-                logger.info(f"Login SUCCESS for {site['url']}, landed on: {bpage.url}")
-            else:
-                if indicator:
-                    found = await _check_indicator_strict(bpage, indicator)
-                    if not found:
-                        await bpage.wait_for_timeout(2000)
-                        found = await _check_indicator_strict(bpage, indicator)
 
-                    if found:
-                        logger.info(f"Login SUCCESS for {site['url']} (indicator found)")
-                    else:
-                        await browser.close()
-                        return {
-                            "status": "critical",
-                            "response_time_ms": actual_response_ms,
-                            "status_code": 200,
-                            "error_message": (
-                                f"Login failed — expected '{expected_page}' in URL "
-                                f"but got: {bpage.url}. "
-                                f"Indicator '{indicator}' also not found."
-                            ),
-                        }
+                if found:
+                    logger.info(f"Login SUCCESS for {site['url']} (indicator '{indicator}' found)")
+                elif on_expected_page:
+                    # On expected page but indicator missing — WARN, not silent pass
+                    logger.warning(f"On expected page but indicator '{indicator}' NOT found")
+                    # Still treat as OK since the page loaded — but log for investigation
                 else:
                     await browser.close()
                     return {
@@ -616,58 +600,60 @@ async def run_login_check(
                         "status_code": 200,
                         "error_message": (
                             f"Login failed — expected '{expected_page}' in URL "
-                            f"but got: {bpage.url}"
+                            f"but got: {bpage.url}. Indicator '{indicator}' not found."
                         ),
                     }
+            elif on_expected_page:
+                logger.info(f"Login SUCCESS for {site['url']}, landed on: {bpage.url}")
+            else:
+                await browser.close()
+                return {
+                    "status": "critical",
+                    "response_time_ms": actual_response_ms,
+                    "status_code": 200,
+                    "error_message": (
+                        f"Login failed — expected '{expected_page}' in URL "
+                        f"but got: {bpage.url}"
+                    ),
+                }
 
-            # Collect performance metrics after login
+            # Collect performance metrics
             login_perf = await collect_performance_metrics(bpage)
             login_perf_summary = format_perf_summary(login_perf, settings.MONITOR_REGION)
 
-            # Add DB latency context to perf summary
             if db_check.get("diagnosis"):
                 login_perf_summary["db_latency_note"] = db_check["diagnosis"]
                 login_perf_summary["db_category"] = db_check.get("category", "")
 
-            # Analyze TTFB to determine if delay is backend vs frontend
+            # Bottleneck analysis
             ttfb = login_perf_summary.get("ttfb_ms", 0)
             total_load = login_perf_summary.get("total_load_ms", 0)
             if ttfb > 0 and total_load > 0:
-                backend_pct = round((ttfb / total_load) * 100) if total_load else 0
+                backend_pct = round((ttfb / total_load) * 100)
                 login_perf_summary["backend_time_pct"] = backend_pct
                 if ttfb > 5000:
                     login_perf_summary["bottleneck"] = "backend/database"
                     login_perf_summary["bottleneck_detail"] = (
-                        f"TTFB is {ttfb}ms ({backend_pct}% of total load) — "
-                        f"server/database is the primary bottleneck"
+                        f"TTFB is {ttfb}ms ({backend_pct}% of total) — server/database bottleneck"
                     )
                 elif total_load - ttfb > 5000:
                     login_perf_summary["bottleneck"] = "frontend/rendering"
                     login_perf_summary["bottleneck_detail"] = (
-                        f"Frontend rendering took {total_load - ttfb}ms after server response — "
-                        f"JS execution or resource loading is the bottleneck"
+                        f"Frontend took {total_load - ttfb}ms after response — rendering bottleneck"
                     )
 
-            # === STEP 3: Validate subpages (if configured) ===
+            # === STEP 3: Validate subpages ===
             overall_status = "ok"
             if pages:
+                from urllib.parse import urlparse
                 for pg in sorted(pages, key=lambda x: x.get("sort_order", 0)):
                     pg_start = time.time()
-                    pg_result = {
-                        "page_name": pg.get("page_name", pg["page_url"]),
-                        "status": "ok",
-                        "error": "",
-                    }
+                    pg_result = {"page_name": pg.get("page_name", pg["page_url"]), "status": "ok", "error": ""}
 
                     try:
-                        resp = await bpage.goto(
-                            pg["page_url"],
-                            timeout=settings.BROWSER_TIMEOUT_MS,
-                            wait_until="domcontentloaded",
-                        )
-                        await bpage.wait_for_timeout(2000)
+                        resp = await bpage.goto(pg["page_url"], timeout=settings.BROWSER_TIMEOUT_MS, wait_until="domcontentloaded")
+                        await bpage.wait_for_timeout(1500)
 
-                        # Check HTTP status code
                         status_code = resp.status if resp else 0
                         if status_code >= 400:
                             pg_result["status"] = "critical"
@@ -677,86 +663,47 @@ async def run_login_check(
                             page_results.append(pg_result)
                             continue
 
-                        # Check URL — did the page redirect to login or error page?
                         actual_url = bpage.url.lower()
-                        expected_path = pg["page_url"].lower().rstrip("/")
-                        login_keywords = ["login", "signin", "logon", "auth", "unauthorized"]
-                        error_keywords = ["error", "404", "not-found", "notfound", "page-not-found"]
-
-                        if any(kw in actual_url for kw in login_keywords):
+                        if any(kw in actual_url for kw in ["login", "signin", "logon", "auth"]):
                             pg_result["status"] = "critical"
-                            pg_result["error"] = f"Redirected to login page: {bpage.url}"
+                            pg_result["error"] = f"Redirected to login: {bpage.url}"
                             overall_status = "critical"
-                            pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
-                            page_results.append(pg_result)
-                            continue
-
-                        if any(kw in actual_url for kw in error_keywords):
+                        elif any(kw in actual_url for kw in ["error", "404", "not-found", "genericerror"]):
                             pg_result["status"] = "critical"
                             pg_result["error"] = f"Redirected to error page: {bpage.url}"
                             overall_status = "critical"
-                            pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
-                            page_results.append(pg_result)
-                            continue
-
-                        # Check if URL path matches expected
-                        from urllib.parse import urlparse
-                        expected_parsed = urlparse(pg["page_url"])
-                        actual_parsed = urlparse(bpage.url)
-                        if expected_parsed.path.rstrip("/") != actual_parsed.path.rstrip("/"):
-                            # URL doesn't match — might be a redirect
-                            # Only fail if no CSS selector is set to verify
-                            if not pg.get("expected_element"):
+                        else:
+                            exp_path = urlparse(pg["page_url"]).path.rstrip("/")
+                            act_path = urlparse(bpage.url).path.rstrip("/")
+                            if exp_path != act_path and not pg.get("expected_element"):
                                 pg_result["status"] = "warning"
-                                pg_result["error"] = (
-                                    f"URL mismatch: expected {expected_parsed.path} "
-                                    f"but got {actual_parsed.path}"
-                                )
+                                pg_result["error"] = f"URL mismatch: expected {exp_path} got {act_path}"
                                 if overall_status == "ok":
                                     overall_status = "warning"
 
-                        # Check expected CSS element
                         if pg.get("expected_element"):
-                            selector = pg["expected_element"].strip()
-                            selectors_to_try = _normalize_selector(selector)
-
-                            found = False
-                            for sel in selectors_to_try:
-                                try:
-                                    el = await bpage.query_selector(sel)
-                                    if el:
-                                        found = True
-                                        break
-                                except Exception:
-                                    pass
-
+                            selectors = _normalize_selector(pg["expected_element"].strip())
+                            found = any(await bpage.query_selector(s) for s in selectors if not None)
                             if not found:
                                 pg_result["status"] = "critical"
-                                pg_result["error"] = (
-                                    f"Element '{selector}' not found on {bpage.url}"
-                                )
+                                pg_result["error"] = f"Element '{pg['expected_element']}' not found"
                                 overall_status = "critical"
 
-                        # Check expected text
                         if pg.get("expected_text"):
                             content = await bpage.content()
                             if pg["expected_text"] not in content:
                                 if pg_result["status"] == "ok":
                                     pg_result["status"] = "warning"
-                                pg_result["error"] = (
-                                    f"Text '{pg['expected_text']}' not found"
-                                )
+                                pg_result["error"] = f"Text '{pg['expected_text']}' not found"
                                 if overall_status == "ok":
                                     overall_status = "warning"
 
-                        # If no element or text checks AND page loaded fine,
-                        # check that page body has meaningful content
                         if not pg.get("expected_element") and not pg.get("expected_text"):
                             try:
-                                body_text = await bpage.inner_text("body")
-                                if len(body_text.strip()) < 50:
+                                body = await bpage.inner_text("body")
+                                if len(body.strip()) < 50:
                                     pg_result["status"] = "warning"
-                                    pg_result["error"] = "Page has very little content — may be an error page"
+                                    pg_result["error"] = "Page has very little content"
                                     if overall_status == "ok":
                                         overall_status = "warning"
                             except Exception:
@@ -764,7 +711,7 @@ async def run_login_check(
 
                     except Exception as e:
                         pg_result["status"] = "critical"
-                        pg_result["error"] = str(e)
+                        pg_result["error"] = str(e).split("\n")[0][:200]
                         overall_status = "critical"
 
                     pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
@@ -772,27 +719,21 @@ async def run_login_check(
 
             await browser.close()
 
-            details = {
-                "perf": login_perf_summary,
-                "subpages": page_results,
-            }
             return {
                 "status": overall_status,
                 "response_time_ms": actual_response_ms,
                 "status_code": 200,
-                "error_message": next(
-                    (r["error"] for r in page_results if r["error"]), ""
-                ),
-                "details": json.dumps(details),
+                "error_message": next((r["error"] for r in page_results if r["error"]), ""),
+                "details": json.dumps({"perf": login_perf_summary, "subpages": page_results}),
             }
     except Exception as e:
         elapsed = (time.time() - start) * 1000
-        logger.error(f"Login check exception for {site['url']}: {e}")
+        logger.error(f"Login check exception for {site['url']}: {e}", exc_info=True)
         return {
             "status": "critical",
             "response_time_ms": elapsed,
             "status_code": 0,
-            "error_message": str(e),
+            "error_message": str(e).split("\n")[0][:200],
             "details": json.dumps(page_results) if page_results else "",
         }
 

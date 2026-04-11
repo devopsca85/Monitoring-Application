@@ -59,8 +59,10 @@ async def _create_and_send_alert(
         status_enum = result.status
         status_str = status_enum.value if hasattr(status_enum, 'value') else str(status_enum)
 
+        # FIX #4: Use FOR UPDATE lock to prevent race condition duplicates
         existing_alert = (
             db.query(Alert)
+            .with_for_update()
             .filter(Alert.site_id == site.id, Alert.resolved == False)
             .first()
         )
@@ -81,7 +83,12 @@ async def _create_and_send_alert(
             resolved=False,
         )
         db.add(alert)
-        db.commit()
+        try:
+            db.commit()
+        except Exception as dup_err:
+            db.rollback()
+            logger.warning(f"Alert creation conflict for {site.name}, likely duplicate: {dup_err}")
+            return
         db.refresh(alert)
         logger.info(f"ALERT CREATED #{alert.id} for {site.name}: {status_str} — {message[:100]}")
 
