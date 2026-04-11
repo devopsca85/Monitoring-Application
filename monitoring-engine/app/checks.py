@@ -11,6 +11,26 @@ from app.iis_diagnostics import analyze_iis_diagnostics
 logger = logging.getLogger(__name__)
 
 
+def _err(component: str, what: str, expected: str = "", actual: str = "", fix: str = "") -> str:
+    """Build a structured, readable error message.
+
+    Args:
+        component: What failed (LOGIN_FORM, PAGE_ELEMENT, API, BACKEND, IIS, etc.)
+        what: What happened
+        expected: What was expected (optional)
+        actual: What was found instead (optional)
+        fix: Suggested action (optional)
+    """
+    parts = [f"[{component}] {what}"]
+    if expected:
+        parts.append(f"Expected: {expected}")
+    if actual:
+        parts.append(f"Actual: {actual}")
+    if fix:
+        parts.append(f"Action: {fix}")
+    return " | ".join(parts)
+
+
 async def run_uptime_check(site: dict) -> dict:
     """Simple HTTP/page load check."""
     start = time.time()
@@ -41,12 +61,14 @@ async def run_uptime_check(site: dict) -> dict:
 
             await browser.close()
 
+            iis_hint = f" ({iis_result['issues'][0]['diagnosis'][:80]})" if iis_result.get("has_issues") else ""
+
             if status_code >= 500:
                 return {
                     "status": "critical",
                     "response_time_ms": elapsed,
                     "status_code": status_code,
-                    "error_message": f"HTTP {status_code} Server Error",
+                    "error_message": _err("SERVER", f"HTTP {status_code} Server Error on {site['url']}", fix=f"Check IIS logs and Application Event Log{iis_hint}"),
                     "details": json.dumps({"perf": perf_summary}),
                 }
 
@@ -55,7 +77,7 @@ async def run_uptime_check(site: dict) -> dict:
                     "status": "critical",
                     "response_time_ms": elapsed,
                     "status_code": status_code,
-                    "error_message": "HTTP 404 Not Found",
+                    "error_message": _err("PAGE", f"HTTP 404 Not Found", expected=site['url'], fix="Verify URL is correct and page exists on the server"),
                 }
 
             if status_code >= 400:
@@ -63,7 +85,8 @@ async def run_uptime_check(site: dict) -> dict:
                     "status": "critical",
                     "response_time_ms": elapsed,
                     "status_code": status_code,
-                    "error_message": f"HTTP {status_code} Client Error",
+                    "error_message": _err("SERVER", f"HTTP {status_code} Client Error on {site['url']}", fix="Check server config, authentication, and access permissions"),
+                    "details": json.dumps({"perf": perf_summary}),
                 }
 
             return {
@@ -312,12 +335,13 @@ async def _detect_error_page_redirect(page, post_url: str, pre_url: str, respons
             if error_element_text:
                 diagnosis += f". Page says: \"{error_element_text[:200]}\""
 
-            error_msg = (
-                f"APPLICATION ERROR: Login redirected to {page_name} instead of expected page. "
-                f"URL: {post_url}. "
-                f"This indicates an issue in application code, configuration, or server-side processing. "
-                f"{('Detail: ' + error_element_text[:200]) if error_element_text else ''}"
-            ).strip()
+            error_msg = _err(
+                "APPLICATION",
+                f"Redirected to {page_name} after login — {base_desc}",
+                expected="Post-login redirect to application page",
+                actual=f"URL: {post_url}" + (f" — Page: {error_element_text[:150]}" if error_element_text else ""),
+                fix="Check Application Event Log, web.config, and recent deployments",
+            )
 
             return {
                 "status": "critical",
@@ -360,7 +384,7 @@ async def _detect_login_failure(page, pre_login_url: str) -> str | None:
                 visible = await el.is_visible()
                 if visible:
                     logger.info(f"Login failure: password field '{sel}' still visible")
-                    return "Login failed — password field still visible (wrong credentials?)"
+                    return _err("LOGIN_AUTH", "Password field still visible after submit — login rejected", expected="Redirect to post-login page", actual=f"Still on: {page.url}", fix="Verify username/password credentials in site config")
         except Exception:
             pass
 
@@ -384,7 +408,7 @@ async def _detect_login_failure(page, pre_login_url: str) -> str | None:
                     text = (await el.inner_text()).strip()
                     if text:
                         logger.info(f"Login failure: error element '{sel}' = '{text[:100]}'")
-                        return f"Login failed — {text[:200]}"
+                        return _err("LOGIN_AUTH", f"Login error displayed: {text[:150]}", actual=f"Error element: {sel}", fix="Check credentials or application error handling")
         except Exception:
             pass
 
@@ -403,7 +427,7 @@ async def _detect_login_failure(page, pre_login_url: str) -> str | None:
         for phrase in error_phrases:
             if phrase in lower_text:
                 logger.info(f"Login failure: page contains '{phrase}'")
-                return f"Login failed — page contains: '{phrase}'"
+                return _err("LOGIN_AUTH", f"Error keyword detected on page: '{phrase}'", actual=f"Page: {page.url}", fix="Verify credentials. Check if account is locked or expired")
     except Exception:
         pass
 
@@ -424,7 +448,7 @@ async def _detect_login_failure(page, pre_login_url: str) -> str | None:
                     visible = await pwd.is_visible()
                     if visible:
                         logger.info(f"Login failure: login form '{sel}' with password field still present")
-                        return "Login failed — login form still displayed after submit"
+                        return _err("LOGIN_FORM", "Login form still displayed after submit — login did not process", actual=f"Form: {sel} still on page", fix="Check if submit button selector is correct. Server may not have processed the login")
         except Exception:
             pass
 
@@ -477,7 +501,7 @@ async def run_login_check(
                     "status": "critical",
                     "response_time_ms": (time.time() - start) * 1000,
                     "status_code": 0,
-                    "error_message": f"Login page error — username field '{username_sel}' not found. Check selector or site may be down. ({str(e).split(chr(10))[0]})",
+                    "error_message": _err("LOGIN_FORM", f"Username field not found on login page", expected=f"Selector: {username_sel}", actual=f"Page: {login_url}", fix=f"Verify selector in site config. Site may be down or page structure changed. ({str(e).split(chr(10))[0][:100]})"),
                 }
 
             try:
@@ -488,7 +512,7 @@ async def run_login_check(
                     "status": "critical",
                     "response_time_ms": (time.time() - start) * 1000,
                     "status_code": 0,
-                    "error_message": f"Login page error — password field '{password_sel}' not found. Check selector or site may be down. ({str(e).split(chr(10))[0]})",
+                    "error_message": _err("LOGIN_FORM", f"Password field not found on login page", expected=f"Selector: {password_sel}", actual=f"Page: {login_url}", fix=f"Verify selector in site config. ({str(e).split(chr(10))[0][:100]})"),
                 }
 
             # Capture pre-login URL
@@ -540,7 +564,7 @@ async def run_login_check(
             if db_check["is_db_issue"]:
                 category = db_check["category"]
                 diagnosis = db_check["diagnosis"]
-                error_msg = f"DATABASE ISSUE ({category.upper()}): {diagnosis}"
+                error_msg = _err("DATABASE", f"{category.upper()} — {diagnosis}", fix="Check SQL Server logs, connection strings, and App Pool health")
                 logger.error(f"DB issue for {site['url']}: {error_msg}")
                 await browser.close()
                 return {
@@ -561,7 +585,7 @@ async def run_login_check(
 
             if failure_msg:
                 if actual_response_ms > 8000 and db_check.get("diagnosis"):
-                    failure_msg = f"{failure_msg} | POSSIBLE DB LATENCY: {db_check['diagnosis']}"
+                    failure_msg = f"{failure_msg} | [BACKEND] Possible DB latency: {db_check['diagnosis']}"
 
                 logger.warning(f"Login FAILED for {site['url']}: {failure_msg}")
                 await browser.close()
@@ -605,10 +629,7 @@ async def run_login_check(
                         "status": "critical",
                         "response_time_ms": actual_response_ms,
                         "status_code": 200,
-                        "error_message": (
-                            f"Login failed — expected '{expected_page}' in URL "
-                            f"but got: {bpage.url}. Indicator '{indicator}' not found."
-                        ),
+                        "error_message": _err("PAGE_ELEMENT", f"Success indicator not found after login", expected=f"Element: {indicator} on page: {expected_page}", actual=f"Current URL: {bpage.url}", fix="Verify CSS selector in site config. Page may have changed structure or login may have silently failed"),
                     }
             elif on_expected_page:
                 logger.info(f"Login SUCCESS for {site['url']}, landed on: {bpage.url}")
@@ -618,10 +639,7 @@ async def run_login_check(
                     "status": "critical",
                     "response_time_ms": actual_response_ms,
                     "status_code": 200,
-                    "error_message": (
-                        f"Login failed — expected '{expected_page}' in URL "
-                        f"but got: {bpage.url}"
-                    ),
+                    "error_message": _err("LOGIN", f"Post-login page mismatch", expected=f"URL containing: {expected_page}", actual=f"URL: {bpage.url}", fix="Check expected page setting. Login may have failed or app may have redirected elsewhere"),
                 }
 
             # Collect performance metrics
@@ -671,7 +689,7 @@ async def run_login_check(
                         status_code = resp.status if resp else 0
                         if status_code >= 400:
                             pg_result["status"] = "critical"
-                            pg_result["error"] = f"HTTP {status_code}"
+                            pg_result["error"] = _err("SERVER", f"HTTP {status_code}", expected=f"200 OK for {pg['page_url']}", fix="Check if page exists and server is running")
                             overall_status = "critical"
                             pg_result["response_time_ms"] = (time.time() - pg_start) * 1000
                             page_results.append(pg_result)
@@ -680,27 +698,35 @@ async def run_login_check(
                         actual_url = bpage.url.lower()
                         if any(kw in actual_url for kw in ["login", "signin", "logon", "auth"]):
                             pg_result["status"] = "critical"
-                            pg_result["error"] = f"Redirected to login: {bpage.url}"
+                            pg_result["error"] = _err("SESSION", "Redirected to login page — session expired or auth failed", expected=pg["page_url"], actual=bpage.url, fix="Check session timeout settings, cookie config, and IIS authentication")
                             overall_status = "critical"
                         elif any(kw in actual_url for kw in ["error", "404", "not-found", "genericerror"]):
                             pg_result["status"] = "critical"
-                            pg_result["error"] = f"Redirected to error page: {bpage.url}"
+                            pg_result["error"] = _err("APPLICATION", "Redirected to error page", expected=pg["page_url"], actual=bpage.url, fix="Check Application Event Log and web.config customErrors")
                             overall_status = "critical"
                         else:
                             exp_path = urlparse(pg["page_url"]).path.rstrip("/")
                             act_path = urlparse(bpage.url).path.rstrip("/")
                             if exp_path != act_path and not pg.get("expected_element"):
                                 pg_result["status"] = "warning"
-                                pg_result["error"] = f"URL mismatch: expected {exp_path} got {act_path}"
+                                pg_result["error"] = _err("ROUTING", "URL path mismatch after navigation", expected=exp_path, actual=act_path, fix="Verify page URL. SPA may be routing to a different view")
                                 if overall_status == "ok":
                                     overall_status = "warning"
 
                         if pg.get("expected_element"):
                             selectors = _normalize_selector(pg["expected_element"].strip())
-                            found = any(await bpage.query_selector(s) for s in selectors if not None)
+                            found = False
+                            for sel in selectors:
+                                try:
+                                    el = await bpage.query_selector(sel)
+                                    if el:
+                                        found = True
+                                        break
+                                except Exception:
+                                    pass
                             if not found:
                                 pg_result["status"] = "critical"
-                                pg_result["error"] = f"Element '{pg['expected_element']}' not found"
+                                pg_result["error"] = _err("PAGE_ELEMENT", f"CSS selector not found on page", expected=f"Element: {pg['expected_element']}", actual=f"Page: {bpage.url}", fix="Verify selector matches current page. Element may have been renamed or removed")
                                 overall_status = "critical"
 
                         if pg.get("expected_text"):
@@ -708,7 +734,7 @@ async def run_login_check(
                             if pg["expected_text"] not in content:
                                 if pg_result["status"] == "ok":
                                     pg_result["status"] = "warning"
-                                pg_result["error"] = f"Text '{pg['expected_text']}' not found"
+                                pg_result["error"] = _err("PAGE_CONTENT", f"Expected text not found", expected=f"Text: '{pg['expected_text']}'", actual=f"Page: {bpage.url}", fix="Page content may have changed or loaded incompletely")
                                 if overall_status == "ok":
                                     overall_status = "warning"
 
@@ -717,7 +743,7 @@ async def run_login_check(
                                 body = await bpage.inner_text("body")
                                 if len(body.strip()) < 50:
                                     pg_result["status"] = "warning"
-                                    pg_result["error"] = "Page has very little content"
+                                    pg_result["error"] = _err("PAGE_CONTENT", "Page body has very little content — may be blank or error page", actual=f"Page: {bpage.url}", fix="Add a CSS selector check for this page to validate content")
                                     if overall_status == "ok":
                                         overall_status = "warning"
                             except Exception:

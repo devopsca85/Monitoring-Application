@@ -140,6 +140,23 @@ class Alert(Base):
     notified_at = Column(DateTime)
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime)
+    false_positive = Column(Boolean, default=False)
+    false_positive_by = Column(String(255))
+    false_positive_at = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
 
     site = relationship("Site", back_populates="alerts")
+
+
+class FalsePositiveRule(Base):
+    """Suppresses notifications for specific alert patterns marked as false positives."""
+    __tablename__ = "false_positive_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    site_id = Column(Integer, ForeignKey("sites.id", ondelete="CASCADE"), index=True)
+    error_pattern = Column(String(500), nullable=False)  # substring to match in error_message
+    created_by = Column(String(255))
+    created_at = Column(DateTime, server_default=func.now())
+    is_active = Column(Boolean, default=True)
+
+    site = relationship("Site")

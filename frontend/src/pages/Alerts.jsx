@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus } from '../services/api';
+import { getAlerts, getAlertHistory, resolveAlert, getSitesStatus, markFalsePositive } from '../services/api';
 import { formatCST } from '../services/time';
 
 function formatDuration(startStr, endStr) {
@@ -39,6 +39,10 @@ export default function Alerts() {
   useEffect(() => { const id = setInterval(load, 15000); return () => clearInterval(id); }, []);
 
   const handleResolve = async (id) => { await resolveAlert(id); load(); };
+  const handleFalsePositive = async (id) => {
+    if (!confirm('Mark as false positive? Future alerts with this same pattern will be suppressed.')) return;
+    await markFalsePositive(id); load();
+  };
 
   const resolvedAlerts = history.filter((a) => a.resolved);
   const criticalSites = sites.filter((s) => s.last_status === 'critical');
@@ -174,7 +178,10 @@ export default function Alerts() {
                     <td style={{ maxWidth: '300px', fontSize: '13px' }}>{a.message || '-'}</td>
                     <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
                     <td style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-status-critical)' }}>{formatDuration(a.created_at, null)}</td>
-                    <td><button onClick={() => handleResolve(a.id)} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '12px' }}>Resolve</button></td>
+                    <td style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => handleResolve(a.id)} className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '11px' }}>Resolve</button>
+                      {!a.false_positive && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '11px' }}>False +</button>}
+                    </td>
                   </tr>
                 ))}
                 {activeAlerts.length === 0 && (
@@ -194,9 +201,9 @@ export default function Alerts() {
           <div className="card-header"><h3>Full Alert History</h3></div>
           <div className="table-container">
             <table>
-              <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>Triggered (CST)</th><th>Resolved (CST)</th><th>Duration</th><th>Status</th></tr></thead>
+              <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>Triggered (CST)</th><th>Resolved (CST)</th><th>Duration</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {history.map((a) => (
+                {history.filter((a) => !a.false_positive).map((a) => (
                   <tr key={a.id}>
                     <td><Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link></td>
                     <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
@@ -205,6 +212,7 @@ export default function Alerts() {
                     <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{a.resolved ? formatCST(a.resolved_at) : <span style={{ color: 'var(--color-status-critical)', fontWeight: 600 }}>ONGOING</span>}</td>
                     <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
                     <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical">Active</span>}</td>
+                    <td>{!a.false_positive && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '10px' }}>False +</button>}</td>
                   </tr>
                 ))}
                 {history.length === 0 && (

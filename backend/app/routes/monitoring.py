@@ -3,7 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.models import Alert, AlertStatus, MonitoringResult, Site, User
+from app.models.models import Alert, AlertStatus, FalsePositiveRule, MonitoringResult, Site, User
 from app.models.schemas import (
     AlertDetailResponse,
     AlertResponse,
@@ -184,6 +184,9 @@ def _format_alert(a, sites_map):
         "message": a.message or "",
         "notified": bool(a.notified or False),
         "resolved": bool(a.resolved or False),
+        "false_positive": bool(a.false_positive or False),
+        "false_positive_by": a.false_positive_by or "",
+        "false_positive_at": _to_iso_utc(a.false_positive_at),
         "created_at": _to_iso_utc(a.created_at),
         "resolved_at": _to_iso_utc(a.resolved_at),
     }
@@ -283,6 +286,163 @@ def resolve_alert(
     db.commit()
     db.refresh(alert)
     return alert
+
+
+@router.post("/alerts/{alert_id}/false-positive")
+def mark_false_positive(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Mark an alert as false positive + create suppression rule for this pattern."""
+    from datetime import datetime, timezone
+
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    alert.false_positive = True
+    alert.false_positive_by = user.email
+    alert.false_positive_at = datetime.now(timezone.utc)
+    alert.resolved = True
+    alert.resolved_at = datetime.now(timezone.utc)
+
+    # Create a suppression rule from the error message
+    # Extract the component tag [COMPONENT] as the pattern key
+    error_msg = alert.message or ""
+    pattern = error_msg
+    if "]" in error_msg:
+        # Use component + first part: "[LOGIN_AUTH] Password field still visible"
+        bracket_end = error_msg.index("]") + 1
+        first_pipe = error_msg.find("|")
+        pattern = error_msg[:first_pipe].strip() if first_pipe > 0 else error_msg[:min(len(error_msg), 150)]
+    else:
+        pattern = error_msg[:150]
+
+    # Check if rule already exists
+    existing = (
+        db.query(FalsePositiveRule)
+        .filter(FalsePositiveRule.site_id == alert.site_id, FalsePositiveRule.error_pattern == pattern, FalsePositiveRule.is_active == True)
+        .first()
+    )
+    if not existing:
+        rule = FalsePositiveRule(
+            site_id=alert.site_id,
+            error_pattern=pattern,
+            created_by=user.email,
+        )
+        db.add(rule)
+
+    db.commit()
+    return {"status": "Marked as false positive", "suppression_pattern": pattern}
+
+
+@router.post("/alerts/{alert_id}/restore")
+def restore_false_positive(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Restore a false positive alert and remove its suppression rule."""
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    alert.false_positive = False
+    alert.false_positive_by = None
+    alert.false_positive_at = None
+    alert.resolved = False
+    alert.resolved_at = None
+
+    # Deactivate matching suppression rules
+    error_msg = alert.message or ""
+    pattern = error_msg
+    if "]" in error_msg:
+        bracket_end = error_msg.index("]") + 1
+        first_pipe = error_msg.find("|")
+        pattern = error_msg[:first_pipe].strip() if first_pipe > 0 else error_msg[:150]
+    else:
+        pattern = error_msg[:150]
+
+    rules = (
+        db.query(FalsePositiveRule)
+        .filter(FalsePositiveRule.site_id == alert.site_id, FalsePositiveRule.error_pattern == pattern)
+        .all()
+    )
+    for r in rules:
+        r.is_active = False
+
+    db.commit()
+    return {"status": "Alert restored, suppression rule deactivated"}
+
+
+@router.get("/false-positives")
+def get_false_positives(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get all false positive alerts and active suppression rules."""
+    fp_alerts = (
+        db.query(Alert)
+        .filter(Alert.false_positive == True)
+        .order_by(Alert.false_positive_at.desc())
+        .limit(100)
+        .all()
+    )
+    valid_site_ids = {s.id for s in db.query(Site.id).all()}
+    sites_map = {s.id: s for s in db.query(Site).all()}
+
+    alerts_data = []
+    for a in fp_alerts:
+        if a.site_id not in valid_site_ids:
+            continue
+        s = sites_map.get(a.site_id)
+        alerts_data.append({
+            "id": a.id,
+            "site_id": a.site_id,
+            "site_name": s.name if s else f"Site #{a.site_id}",
+            "alert_type": a.alert_type.value if a.alert_type and hasattr(a.alert_type, 'value') else str(a.alert_type or ""),
+            "message": a.message or "",
+            "false_positive_by": a.false_positive_by or "",
+            "false_positive_at": _to_iso_utc(a.false_positive_at),
+            "created_at": _to_iso_utc(a.created_at),
+        })
+
+    # Active suppression rules
+    rules = (
+        db.query(FalsePositiveRule)
+        .filter(FalsePositiveRule.is_active == True)
+        .order_by(FalsePositiveRule.created_at.desc())
+        .all()
+    )
+    rules_data = []
+    for r in rules:
+        s = sites_map.get(r.site_id)
+        rules_data.append({
+            "id": r.id,
+            "site_id": r.site_id,
+            "site_name": s.name if s else f"Site #{r.site_id}",
+            "error_pattern": r.error_pattern,
+            "created_by": r.created_by or "",
+            "created_at": _to_iso_utc(r.created_at),
+        })
+
+    return {"alerts": alerts_data, "rules": rules_data}
+
+
+@router.delete("/false-positive-rules/{rule_id}")
+def delete_fp_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete a false positive suppression rule."""
+    rule = db.query(FalsePositiveRule).filter(FalsePositiveRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    db.delete(rule)
+    db.commit()
+    return {"status": "Suppression rule deleted"}
 
 
 @router.post("/alerts/acknowledge")

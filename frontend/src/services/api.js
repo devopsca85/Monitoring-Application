@@ -51,6 +51,10 @@ export const getAlertHistory = (limit = 100) => api.get(`/monitoring/alert-histo
 export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`);
 export const acknowledgeAlerts = () => api.post('/monitoring/alerts/acknowledge');
 export const deleteAlertHistory = () => api.delete('/monitoring/alerts/history');
+export const markFalsePositive = (id) => api.post(`/monitoring/alerts/${id}/false-positive`);
+export const restoreFalsePositive = (id) => api.post(`/monitoring/alerts/${id}/restore`);
+export const getFalsePositives = () => api.get('/monitoring/false-positives');
+export const deleteFpRule = (id) => api.delete(`/monitoring/false-positive-rules/${id}`);
 export const getSlownessAnalysis = () => api.get('/monitoring/slowness-analysis');
 export const getIisDiagnostics = (siteId) => api.get(`/monitoring/iis-diagnostics/${siteId}`);
 export const getSitesStatus = () => api.get('/monitoring/sites-status');

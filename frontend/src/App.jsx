@@ -11,6 +11,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminSettings from './pages/AdminSettings';
 import Profile from './pages/Profile';
 import Metrics from './pages/Metrics';
+import FalsePositives from './pages/FalsePositives';
 import AlertMonitor from './components/AlertMonitor';
 
 function App() {
@@ -55,6 +56,7 @@ function App() {
             <Route path="/sites/:id" element={<SiteDetail />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/metrics" element={<Metrics />} />
+            <Route path="/false-positives" element={<FalsePositives />} />
             <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
             {user.is_admin && (
               <>
@@ -205,6 +207,10 @@ function Sidebar({ user }) {
         <Link to="/metrics" className={isActive('/metrics')}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 21H3V3"/><path d="M18 9l-5 5-2-2-4 4"/></svg>
           Metrics & Rules
+        </Link>
+        <Link to="/false-positives" className={isActive('/false-positives')}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v2m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
+          False Positives
         </Link>
         {user.is_admin && (
           <>

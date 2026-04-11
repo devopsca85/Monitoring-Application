@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Alert, AlertStatus, MonitoringResult, Site
+from app.models.models import Alert, AlertStatus, FalsePositiveRule, MonitoringResult, Site
 from app.services.notification_service import send_alert
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,28 @@ async def _create_and_send_alert(
             return
         db.refresh(alert)
         logger.info(f"ALERT CREATED #{alert.id} for {site.name}: {status_str} — {message[:100]}")
+
+        # Check false positive suppression rules before sending notification
+        suppressed = False
+        fp_rules = (
+            db.query(FalsePositiveRule)
+            .filter(FalsePositiveRule.site_id == site.id, FalsePositiveRule.is_active == True)
+            .all()
+        )
+        for rule in fp_rules:
+            if rule.error_pattern and rule.error_pattern.lower() in message.lower():
+                logger.info(f"Alert #{alert.id} suppressed by false positive rule #{rule.id}: '{rule.error_pattern[:60]}'")
+                alert.false_positive = True
+                alert.false_positive_by = "auto-suppressed"
+                alert.false_positive_at = datetime.now(timezone.utc)
+                alert.resolved = True
+                alert.resolved_at = datetime.now(timezone.utc)
+                db.commit()
+                suppressed = True
+                break
+
+        if suppressed:
+            return
 
         to_emails = [e.strip() for e in (site.notification_emails or "").split(",") if e.strip()]
 
