@@ -6,11 +6,12 @@ export default function Metrics() {
       color: '#007aff',
       items: [
         { label: 'Method', value: 'Headless Chromium browser (Playwright) loads the full page' },
-        { label: 'Measures', value: 'Page load time (domcontentloaded)' },
+        { label: 'Measures', value: 'Page load time (domcontentloaded) + Performance API metrics' },
         { label: 'HTTP 404', value: 'Instant CRITICAL alert' },
         { label: 'HTTP 5XX', value: 'Instant CRITICAL alert (500, 501, 502, 503, 504)' },
         { label: 'HTTP 4XX (other)', value: 'Instant CRITICAL alert' },
         { label: 'Timeout', value: 'CRITICAL alert if page does not load within 30 seconds' },
+        { label: 'Perf Metrics', value: 'Captures TTFB, DOM load, FCP, resource counts, transfer size' },
         { label: 'Success', value: 'HTTP 200-399 with page loaded = OK' },
       ],
     },
@@ -20,12 +21,15 @@ export default function Metrics() {
       color: '#13612e',
       items: [
         { label: 'Method', value: 'Fills username/password, clicks submit, waits for page load + network idle' },
-        { label: 'Password Field Check', value: 'If password input still visible after submit = CRITICAL (strongest signal)' },
-        { label: 'Error Detection', value: 'Scans for .error, .alert-danger, [role=alert], red spans, and error keywords' },
+        { label: 'Field Error Handling', value: 'If username/password field not found — clean error with selector name' },
+        { label: 'Password Field Check', value: 'If password input still visible after submit = CRITICAL' },
+        { label: 'Error Detection', value: 'Scans for .error, .alert-danger, [role=alert], red spans, error keywords' },
         { label: 'Error Keywords', value: '"invalid", "incorrect", "failed", "denied", "wrong password", "try again", "account locked"' },
+        { label: 'DB Issue Detection', value: 'Scans page for SQL Server errors, timeouts, deadlocks, connection failures' },
+        { label: 'Backend Latency', value: 'If login takes >15s, flags as DATABASE ISSUE (LATENCY). 8-15s adds latency note' },
         { label: 'Expected Page', value: 'Verifies URL contains expected page after login (default: mainpage.aspx)' },
-        { label: 'CSS Selector', value: 'If set, verifies element exists in DOM. Auto-prefixes # for IDs' },
-        { label: 'Post-Login Fallback', value: 'If CSS selector not found but URL has mainpage.aspx = OK' },
+        { label: 'CSS Selector', value: 'Supports all formats: #id, .class, tag#id, ul#breadcrumbs, div.class, input[attr]' },
+        { label: 'Post-Login Fallback', value: 'If CSS selector not found but URL has expected page = OK' },
         { label: 'SSO Backdoor', value: 'Use direct login URL for SSO sites (bypasses SSO flow)' },
         { label: 'Response Time', value: 'Measures submit-to-page-load only (excludes JS rendering buffer)' },
       ],
@@ -35,12 +39,13 @@ export default function Metrics() {
       icon: '\uD83D\uDCC4',
       color: '#6b46c1',
       items: [
+        { label: 'Prerequisite', value: 'Subpages only execute after login is confirmed successful' },
         { label: 'Method', value: 'After login, navigates each configured subpage in sort order' },
         { label: 'HTTP Status', value: 'Fails immediately on 4XX/5XX responses' },
         { label: 'Login Redirect', value: 'Detects if page redirected to login/signin/auth = CRITICAL (session expired)' },
         { label: 'Error Page', value: 'Detects if URL contains "error", "404", "not-found" = CRITICAL' },
-        { label: 'URL Path Match', value: 'Compares expected path vs actual path — warns on mismatch (catches SPA wrong routes)' },
-        { label: 'CSS Selector', value: 'Must exist in DOM (auto-prefixes # for IDs). Fails = CRITICAL' },
+        { label: 'URL Path Match', value: 'Compares expected vs actual path — warns on mismatch (catches SPA wrong routes)' },
+        { label: 'CSS Selector', value: 'Supports all CSS formats (tag#id, div.class etc). Auto-normalizes. Missing = CRITICAL' },
         { label: 'Expected Text', value: 'Text must be in page content. Missing = WARNING' },
         { label: 'Empty Page Check', value: 'If no CSS/text set and body has <50 chars = WARNING (likely error page)' },
         { label: 'Overall Status', value: 'Worst subpage status becomes the overall result' },
@@ -61,9 +66,26 @@ export default function Metrics() {
         { label: 'Minimum Data', value: 'Requires at least 2 data points before alerting' },
         { label: 'Cooldown', value: '3 hours between slow alerts per site (no repeated emails/Teams)' },
         { label: 'Consolidated Alert', value: 'One email/Teams for ALL slow sites together (not per-site)' },
+        { label: 'Deduplication', value: 'One alert per site — subsequent slow checks update existing alert, no new record' },
         { label: 'Measurement', value: 'Submit-to-page-load + network idle (excludes JS buffer waits)' },
         { label: 'Recovery', value: 'Auto-resolves when response drops below threshold' },
-        { label: 'Dashboard Analysis', value: 'Shows slow periods >60 min with hourly charts in CST' },
+        { label: 'Dashboard Analysis', value: 'Shows slow periods >60 min with hourly bar charts in CST' },
+      ],
+    },
+    {
+      title: 'Database / SQL Server Detection',
+      icon: '\uD83D\uDDC4',
+      color: '#c53030',
+      items: [
+        { label: 'SQL Timeout', value: '"execution timeout expired", "wait operation timed out" → CRITICAL (timeout)' },
+        { label: 'Connection Failure', value: '"cannot open database", "network-related error", "max pool size" → CRITICAL (connection)' },
+        { label: 'Deadlock', value: '"transaction was deadlocked" → CRITICAL (deadlock)' },
+        { label: 'DB Auth Failure', value: '"login failed for user" → CRITICAL (db_auth)' },
+        { label: 'ASP.NET Errors', value: '"server error in", "runtime error", "stack trace" → CRITICAL (sql_error)' },
+        { label: 'Severe Latency', value: 'Login response >15s → CRITICAL "Severe backend latency — likely SQL Server delays"' },
+        { label: 'Moderate Latency', value: 'Login response 8-15s → Note appended: "POSSIBLE DB LATENCY"' },
+        { label: 'Bottleneck Analysis', value: 'TTFB vs total load — identifies backend/database vs frontend/rendering bottleneck' },
+        { label: 'Backend % Metric', value: 'Shows % of load time spent on server. Red >70%, Orange >50%, Green <50%' },
       ],
     },
     {
@@ -73,6 +95,7 @@ export default function Metrics() {
       items: [
         { label: 'HTTP 404 / 5XX', value: 'Instant CRITICAL alert on first occurrence' },
         { label: 'Login Failure', value: 'Instant CRITICAL when password field visible or error detected' },
+        { label: 'Database Issue', value: 'Instant CRITICAL with category (timeout/connection/deadlock/latency)' },
         { label: 'Subpage Failure', value: 'CRITICAL if element missing or redirected to login/error page' },
         { label: 'Slowness', value: 'WARNING after 15 min sustained, consolidated, 3-hour cooldown' },
         { label: 'Recovery', value: 'Instant OK notification + auto-resolve when site comes back' },
@@ -87,12 +110,13 @@ export default function Metrics() {
       items: [
         { label: 'Email (SMTP)', value: 'Configurable in Admin > Settings — sent to per-site notification emails' },
         { label: 'MS Teams', value: 'Global webhook — fires if configured and enabled. ON/OFF toggle in settings' },
-        { label: 'Teams Acknowledge', value: 'When alarm is silenced, Teams gets "Alert Acknowledged by [name]" message' },
+        { label: 'Teams Acknowledge', value: 'When alarm is silenced, Teams gets "Alert Acknowledged by [name]" with down/slow breakdown' },
         { label: 'Dashboard Alarm', value: 'Audio alarm + red/orange banner + toast popups on all pages' },
         { label: 'Alarm Audio', value: 'Upload custom MP3/WAV/OGG in Admin > Settings, or uses default generated tone' },
         { label: 'Critical Only Sound', value: 'Audio alarm plays only for CRITICAL (down) — not for warnings (slow)' },
         { label: 'Warning Banner', value: 'Orange banner for slow sites — auto-hides after 30 seconds' },
-        { label: 'Toast Popups', value: 'Slide-in notifications, auto-dismiss after 5 seconds' },
+        { label: 'Toast Behavior', value: 'New alerts: instant toast. Ongoing: repeats every 30 minutes. No spam on page refresh' },
+        { label: 'Toast Auto-Dismiss', value: '5 seconds' },
         { label: 'Admin Notifications', value: 'All admins emailed when sites are added or removed' },
         { label: 'Recovery Email', value: 'Green-themed email/Teams when site comes back online' },
       ],
@@ -115,16 +139,24 @@ export default function Metrics() {
       ],
     },
     {
-      title: 'Response Time Measurement',
+      title: 'Performance Metrics',
       icon: '\u26A1',
       color: '#fc5c1d',
       items: [
-        { label: 'Uptime Check', value: 'Time from navigation start to domcontentloaded' },
-        { label: 'Login Check', value: 'Time from submit click to page load + network idle' },
-        { label: 'Excludes', value: 'JS rendering buffer (2s) and indicator retry waits are NOT counted' },
-        { label: 'Subpage Time', value: 'Each subpage measured independently (navigation to load + 2s buffer)' },
+        { label: 'Source', value: 'Browser Performance API (Navigation Timing, Resource Timing, Paint Timing)' },
+        { label: 'TTFB', value: 'Time to First Byte — server processing + network latency' },
+        { label: 'DOM Loaded', value: 'DOMContentLoaded event time — HTML parsed + sync scripts done' },
+        { label: 'DOM Complete', value: 'All resources (images, CSS, JS) finished loading' },
+        { label: 'Total Load', value: 'Load event end — complete page ready' },
+        { label: 'First Paint / FCP', value: 'First pixel rendered / First meaningful content visible' },
+        { label: 'DNS / TCP / TLS', value: 'Network connection breakdown — diagnose connectivity issues' },
+        { label: 'Slow Resources', value: 'Resources taking >1 second (scripts, CSS, images) with name, type, duration' },
+        { label: 'Slow API Calls', value: 'XHR/Fetch requests taking >2 seconds with endpoint URL and duration' },
+        { label: 'Failed Resources', value: 'Resources with 4XX/5XX status codes' },
+        { label: 'Backend % Metric', value: 'TTFB as percentage of total load — indicates server vs client bottleneck' },
+        { label: 'Bottleneck Analysis', value: 'Auto-detects if delay is backend/database (TTFB >5s) or frontend/rendering' },
+        { label: 'Region', value: 'Geographic region where check runs (configurable via MONITOR_REGION env var)' },
         { label: 'Browser', value: 'Chromium headless via Playwright (same engine as Chrome)' },
-        { label: 'Dashboard Chart', value: 'Hourly bar chart for slow sites showing avg/max over 24h in CST' },
       ],
     },
     {
@@ -147,18 +179,27 @@ export default function Metrics() {
 
   const defaults = [
     { setting: 'Slow Response Threshold', value: '10,000ms (10 seconds)', where: 'Per site, configurable' },
-    { setting: 'Sustained Slowness Period', value: '15 minutes', where: 'Before sending alert' },
+    { setting: 'Sustained Slowness Period', value: '15 minutes', where: 'Before sending slow alert' },
     { setting: 'Slow Alert Cooldown', value: '3 hours', where: 'Between repeated slow alerts per site' },
-    { setting: 'Slowness Dashboard Threshold', value: '60 minutes', where: 'Show in dashboard analysis chart' },
+    { setting: 'Slow Alert Dedup', value: '1 per site', where: 'Updates existing alert, no duplicates' },
+    { setting: 'Slowness Dashboard Chart', value: '>60 minutes', where: 'Show in slowness analysis section' },
+    { setting: 'DB Latency Severe', value: '>15,000ms', where: 'Flags as DATABASE ISSUE (CRITICAL)' },
+    { setting: 'DB Latency Moderate', value: '8,000-15,000ms', where: 'Appends latency note to alert' },
+    { setting: 'Backend Bottleneck', value: 'TTFB >5,000ms', where: 'Flags as backend/database bottleneck' },
+    { setting: 'Frontend Bottleneck', value: 'Render time >5,000ms', where: 'Flags as frontend/rendering bottleneck' },
     { setting: 'Expected Post-Login Page', value: 'mainpage.aspx', where: 'Per site, configurable' },
     { setting: 'Browser Timeout', value: '30 seconds', where: 'Page load timeout' },
+    { setting: 'Monitor Region', value: 'US-Central', where: 'MONITOR_REGION env var on engine' },
     { setting: 'Scheduler Tick', value: '15 seconds', where: 'How often scheduler checks for due sites' },
     { setting: 'Alert Poll Interval', value: '10 seconds', where: 'Frontend checks for new alerts' },
     { setting: 'Dashboard Refresh', value: '15 seconds', where: 'Auto-refresh all dashboard data' },
+    { setting: 'Toast Repeat Interval', value: '30 minutes', where: 'Repeat toast for ongoing alerts' },
     { setting: 'Toast Auto-Dismiss', value: '5 seconds', where: 'Popup notifications' },
     { setting: 'Warning Banner Auto-Hide', value: '30 seconds', where: 'Orange slow/warning banner' },
     { setting: 'Alarm Repeat', value: '4 seconds', where: 'Sound beep interval during critical alerts' },
     { setting: 'Check Interval Default', value: '5 minutes', where: 'New site default' },
+    { setting: 'Slow Resource Threshold', value: '>1 second', where: 'Flagged in perf metrics' },
+    { setting: 'Slow API Call Threshold', value: '>2 seconds', where: 'Flagged in perf metrics' },
   ];
 
   const renderSection = (title, groups) => (
@@ -206,21 +247,23 @@ export default function Metrics() {
       <div className="card" style={{ background: 'linear-gradient(135deg, #001e3f, #003366)', color: 'white', marginBottom: '24px' }}>
         <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>How This Monitoring App Works</h3>
         <p style={{ fontSize: '13px', opacity: 0.85, lineHeight: 1.7 }}>
-          The monitoring engine uses a <strong>headless Chromium browser (Playwright)</strong> to perform real user simulations.
-          For each configured site, it loads the page, fills login forms, clicks buttons, and navigates subpages — exactly like a real user would.
-          Response times measure <strong>actual page load speed</strong> (submit to network idle), not just HTTP pings.
-          Alerts fire instantly on failures. Slowness alerts require <strong>15 minutes sustained</strong> and are sent as a <strong>single consolidated email/Teams</strong> with a <strong>3-hour cooldown</strong>.
-          Recovery alerts fire instantly when sites come back online.
+          The monitoring engine uses a <strong>headless Chromium browser (Playwright)</strong> to perform real user simulations
+          from <strong>{'{MONITOR_REGION}'}</strong>. For each site, it loads pages, fills login forms, navigates subpages, and collects
+          <strong> detailed performance metrics</strong> (TTFB, DOM load, FCP, resource timing) via the browser Performance API.
+          It detects <strong>SQL Server issues</strong> (timeouts, deadlocks, connection failures) and identifies whether slowness
+          is caused by <strong>backend/database</strong> or <strong>frontend/rendering</strong>.
+          Alerts fire instantly on failures. Slowness alerts require <strong>15 min sustained</strong>, are sent as a
+          <strong> single consolidated email/Teams</strong> with a <strong>3-hour cooldown</strong>.
         </p>
       </div>
 
       {renderSection('Check Types', rules)}
-      {renderSection('Thresholds & Alerts', thresholds)}
-      {renderSection('Scheduling & Security', timing)}
+      {renderSection('Thresholds, Detection & Alerts', thresholds)}
+      {renderSection('Scheduling, Metrics & Security', timing)}
 
       {/* Default Values Table */}
       <div className="card" style={{ marginBottom: '24px' }}>
-        <div className="card-header"><h3>Default Values</h3></div>
+        <div className="card-header"><h3>Default Values & Thresholds</h3></div>
         <div className="table-container">
           <table>
             <thead>
@@ -245,8 +288,8 @@ export default function Metrics() {
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
           {[
             { badge: 'ok', label: 'OK', desc: 'Site is up, fast, all checks pass' },
-            { badge: 'warning', label: 'WARNING', desc: 'Site slow (sustained >15min), text missing, URL mismatch, or minor issue' },
-            { badge: 'critical', label: 'CRITICAL', desc: 'Site down, login failed, HTTP 4XX/5XX, element missing, or redirect to error page' },
+            { badge: 'warning', label: 'WARNING', desc: 'Site slow (sustained >15min), text missing, URL mismatch, or moderate DB latency' },
+            { badge: 'critical', label: 'CRITICAL', desc: 'Site down, login failed, HTTP 4XX/5XX, DB timeout/deadlock/connection, or severe latency (>15s)' },
           ].map((s) => (
             <div key={s.badge} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span className={`badge badge-${s.badge}`} style={{ fontSize: '12px' }}>{s.label}</span>
