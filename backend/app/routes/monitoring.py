@@ -438,145 +438,265 @@ def iis_diagnostics(
         return {"site_name": site.name, "has_issues": False, "message": "No recent data"}
 
     threshold = site.slow_threshold_ms or 10000
-
-    # Analyze patterns
     total_checks = len(results_24h)
     failures = [r for r in results_24h if r.status != AlertStatus.OK]
     slow_checks = [r for r in results_24h if (r.response_time_ms or 0) > threshold]
     response_times = [r.response_time_ms or 0 for r in results_24h if r.response_time_ms]
 
-    # Extract IIS diagnostics from details JSON
+    # === DETAILED FAILURE BREAKDOWN ===
+    failure_types = {
+        "login_failure": [], "http_error": [], "timeout": [],
+        "db_issue": [], "error_page_redirect": [], "iis_issue": [],
+        "subpage_failure": [], "other": [],
+    }
     iis_issues_found = []
     cold_start_count = 0
     error_page_count = 0
+    # Perf aggregations
+    ttfb_values = []
+    backend_pct_values = []
+    slow_resources_all = {}
+    slow_apis_all = {}
+    failed_resources_all = {}
+    bottleneck_counts = {"backend/database": 0, "frontend/rendering": 0}
 
     for r in results_24h:
+        rt = r.response_time_ms or 0
+        err = (r.error_message or "").lower()
+
+        # Classify failure type
+        if r.status != AlertStatus.OK:
+            entry = {
+                "time": _to_iso_utc(r.checked_at),
+                "response_ms": int(rt),
+                "error": (r.error_message or "")[:200],
+                "status_code": r.status_code,
+            }
+            if "database issue" in err or "sql" in err or "db " in err:
+                failure_types["db_issue"].append(entry)
+            elif "login failed" in err or "password field" in err or "login page error" in err:
+                failure_types["login_failure"].append(entry)
+            elif "http 4" in err or "http 5" in err:
+                failure_types["http_error"].append(entry)
+            elif "timeout" in err or "timed out" in err:
+                failure_types["timeout"].append(entry)
+            elif "application error" in err or "genericerror" in err or "error page" in err:
+                failure_types["error_page_redirect"].append(entry)
+            elif "redirected to" in err or "element" in err and "not found" in err:
+                failure_types["subpage_failure"].append(entry)
+            else:
+                failure_types["other"].append(entry)
+
+        # Parse details JSON for perf data
         if not r.details:
             continue
         try:
             details = json_mod.loads(r.details)
             perf = details.get("perf", {})
-            iis_diag = perf.get("iis_diagnostics", [])
-            for issue in iis_diag:
+
+            # IIS diagnostics
+            for issue in perf.get("iis_diagnostics", []):
                 iis_issues_found.append({
                     "time": _to_iso_utc(r.checked_at),
                     "category": issue.get("category", ""),
                     "severity": issue.get("severity", ""),
                     "diagnosis": issue.get("diagnosis", ""),
+                    "recommendation": issue.get("recommendation", ""),
                 })
                 if issue.get("category") == "cold_start":
                     cold_start_count += 1
+                if r.status != AlertStatus.OK:
+                    failure_types["iis_issue"].append({
+                        "time": _to_iso_utc(r.checked_at),
+                        "response_ms": int(rt),
+                        "error": issue.get("diagnosis", "")[:200],
+                        "category": issue.get("category", ""),
+                    })
 
             if details.get("error_page_redirect"):
                 error_page_count += 1
+
+            # Aggregate perf metrics
+            ttfb = perf.get("ttfb_ms", 0)
+            if ttfb > 0:
+                ttfb_values.append(ttfb)
+            bpct = perf.get("backend_time_pct", 0)
+            if bpct > 0:
+                backend_pct_values.append(bpct)
+            bn = perf.get("bottleneck", "")
+            if bn in bottleneck_counts:
+                bottleneck_counts[bn] += 1
+
+            # Aggregate slow resources across checks
+            for sr in perf.get("slow_resources", []):
+                name = sr.get("name", "unknown")
+                slow_resources_all.setdefault(name, []).append(sr.get("duration", 0))
+            for sa in perf.get("slow_api_calls", []):
+                url = sa.get("url", "unknown")
+                slow_apis_all.setdefault(url, []).append(sa.get("duration", 0))
+            for fr in perf.get("failed_resources", []):
+                name = fr.get("name", "unknown")
+                failed_resources_all[name] = failed_resources_all.get(name, 0) + 1
         except Exception:
             pass
 
-    # 7-day trend: count failures per day
-    daily_failures = {}
-    for r in results_7d:
-        if r.status != AlertStatus.OK and r.checked_at:
-            day = r.checked_at.strftime("%Y-%m-%d")
-            daily_failures[day] = daily_failures.get(day, 0) + 1
+    # === SLOWNESS ROOT CAUSE ANALYSIS ===
+    slowness_causes = []
+    if backend_pct_values:
+        avg_backend = round(sum(backend_pct_values) / len(backend_pct_values))
+        if avg_backend > 60:
+            slowness_causes.append({
+                "cause": "Backend / Server Processing",
+                "detail": f"Average {avg_backend}% of load time is server-side (TTFB). Likely database queries or application logic.",
+                "severity": "high" if avg_backend > 80 else "medium",
+            })
+    if bottleneck_counts["frontend/rendering"] > 3:
+        slowness_causes.append({
+            "cause": "Frontend / JS Rendering",
+            "detail": f"{bottleneck_counts['frontend/rendering']} checks flagged frontend rendering as bottleneck. Heavy JS bundles or client-side processing.",
+            "severity": "medium",
+        })
 
-    # Generate recommendations based on patterns
+    # Top slow resources
+    top_slow_resources = sorted(
+        [{"name": k, "avg_ms": round(sum(v)/len(v)), "occurrences": len(v)} for k, v in slow_resources_all.items()],
+        key=lambda x: x["avg_ms"], reverse=True,
+    )[:10]
+    if top_slow_resources:
+        slowness_causes.append({
+            "cause": "Slow Static Resources",
+            "detail": f"{len(top_slow_resources)} resources consistently slow. Top: {top_slow_resources[0]['name']} ({top_slow_resources[0]['avg_ms']}ms avg)",
+            "severity": "medium",
+            "resources": top_slow_resources,
+        })
+
+    # Top slow API calls
+    top_slow_apis = sorted(
+        [{"url": k, "avg_ms": round(sum(v)/len(v)), "occurrences": len(v)} for k, v in slow_apis_all.items()],
+        key=lambda x: x["avg_ms"], reverse=True,
+    )[:10]
+    if top_slow_apis:
+        slowness_causes.append({
+            "cause": "Slow Backend API Calls",
+            "detail": f"{len(top_slow_apis)} API endpoints consistently slow. Top: {top_slow_apis[0]['url']} ({top_slow_apis[0]['avg_ms']}ms avg)",
+            "severity": "high",
+            "apis": top_slow_apis,
+        })
+
+    # Failed resources
+    top_failed = sorted(
+        [{"name": k, "count": v} for k, v in failed_resources_all.items()],
+        key=lambda x: x["count"], reverse=True,
+    )[:10]
+
+    # === 7-DAY TREND ===
+    daily_failures = {}
+    daily_slow = {}
+    for r in results_7d:
+        if r.checked_at:
+            day = r.checked_at.strftime("%Y-%m-%d")
+            if r.status != AlertStatus.OK:
+                daily_failures[day] = daily_failures.get(day, 0) + 1
+            if (r.response_time_ms or 0) > threshold:
+                daily_slow[day] = daily_slow.get(day, 0) + 1
+
+    # === RECOMMENDATIONS ===
     recommendations = []
 
-    # Pattern: Frequent cold starts (high TTFB after periods of inactivity)
     if cold_start_count >= 3:
         recommendations.append({
-            "priority": "high",
-            "category": "App Pool Configuration",
-            "issue": f"{cold_start_count} cold start patterns detected in 24h",
+            "priority": "high", "category": "App Pool Cold Start",
+            "issue": f"{cold_start_count} cold start patterns in 24h",
             "actions": [
-                "Set App Pool Start Mode to 'AlwaysRunning' (applicationHost.config)",
-                "Enable Application Initialization: set preloadEnabled='true' on the site",
-                "Configure Application Warm-Up module to pre-hit critical pages",
-                "Set Idle Timeout to 0 (disable) or increase to 1740 minutes",
+                "Set Start Mode to 'AlwaysRunning'", "Enable preloadEnabled=true",
+                "Configure Warm-Up module", "Set Idle Timeout to 0",
             ],
         })
 
-    # Pattern: Repeated failures suggest app pool crashes
     if len(failures) > 5 and len(failures) / total_checks > 0.1:
+        top_type = max(failure_types.items(), key=lambda x: len(x[1]))
         recommendations.append({
-            "priority": "high",
-            "category": "App Pool Stability",
-            "issue": f"{len(failures)} failures out of {total_checks} checks ({round(len(failures)/total_checks*100)}%)",
+            "priority": "high", "category": "App Pool Stability",
+            "issue": f"{len(failures)}/{total_checks} failures ({round(len(failures)/total_checks*100)}%). Primary: {top_type[0]} ({len(top_type[1])})",
             "actions": [
-                "Check Windows Event Viewer for W3WP crash events",
-                "Review Rapid-Fail Protection settings (disable if auto-stopping the pool)",
-                "Increase Private Memory Limit (default 0 = unlimited)",
-                "Check for unhandled exceptions in Application Event Log",
-                "Consider enabling App Pool recycling at specific times (e.g., 3 AM) instead of on-demand",
+                "Check Event Viewer for W3WP crash events",
+                "Review Rapid-Fail Protection settings",
+                "Increase Private Memory Limit",
+                "Check Application Event Log for unhandled exceptions",
             ],
         })
 
-    # Pattern: Consistent slowness
     if len(slow_checks) > 5 and len(slow_checks) / total_checks > 0.2:
         avg_slow = sum(r.response_time_ms or 0 for r in slow_checks) / len(slow_checks)
+        primary_cause = slowness_causes[0]["cause"] if slowness_causes else "Unknown"
         recommendations.append({
-            "priority": "medium",
-            "category": "Performance Tuning",
-            "issue": f"{len(slow_checks)} slow responses ({round(len(slow_checks)/total_checks*100)}% of checks, avg {int(avg_slow)}ms)",
+            "priority": "medium", "category": "Performance",
+            "issue": f"{len(slow_checks)} slow ({round(len(slow_checks)/total_checks*100)}%, avg {int(avg_slow)}ms). Primary cause: {primary_cause}",
             "actions": [
-                "Profile application code for slow database queries",
-                "Enable output caching for static/semi-static pages",
-                "Check IIS compression settings (enable dynamic + static compression)",
-                "Increase maxConcurrentRequestsPerCPU if thread pool is saturated",
-                "Consider Web Garden (multiple worker processes) for CPU-bound apps",
-                "Review recycling interval — reduce if memory leaks are suspected",
+                "Profile database queries for slow operations",
+                "Enable IIS output caching and compression",
+                "Increase maxConcurrentRequestsPerCPU",
+                "Consider Web Garden for CPU-bound workloads",
             ],
         })
 
-    # Pattern: Error pages (GenericError.aspx etc)
     if error_page_count >= 3:
         recommendations.append({
-            "priority": "high",
-            "category": "Application Errors",
+            "priority": "high", "category": "Application Errors",
             "issue": f"{error_page_count} error page redirects in 24h",
             "actions": [
-                "Check Application Event Log for unhandled exceptions",
-                "Review customErrors settings in web.config",
-                "Enable detailed errors temporarily to diagnose root cause",
-                "Check if error correlates with specific times (deployment, traffic spike)",
+                "Check Application Event Log", "Review customErrors in web.config",
+                "Enable detailed errors temporarily", "Correlate with deployment times",
             ],
         })
 
-    # Pattern: Worsening trend over 7 days
     if len(daily_failures) >= 3:
         days_sorted = sorted(daily_failures.items())
         if len(days_sorted) >= 3:
-            recent_avg = sum(v for _, v in days_sorted[-3:]) / 3
-            older_avg = sum(v for _, v in days_sorted[:max(1, len(days_sorted)-3)]) / max(1, len(days_sorted)-3)
-            if recent_avg > older_avg * 1.5 and recent_avg > 2:
+            recent = sum(v for _, v in days_sorted[-3:]) / 3
+            older = sum(v for _, v in days_sorted[:max(1, len(days_sorted)-3)]) / max(1, len(days_sorted)-3)
+            if recent > older * 1.5 and recent > 2:
                 recommendations.append({
-                    "priority": "medium",
-                    "category": "Worsening Trend",
-                    "issue": f"Failure rate increasing: recent avg {recent_avg:.0f}/day vs earlier {older_avg:.0f}/day",
+                    "priority": "medium", "category": "Worsening Trend",
+                    "issue": f"Failures increasing: recent {recent:.0f}/day vs earlier {older:.0f}/day",
                     "actions": [
-                        "Investigate recent deployments or configuration changes",
-                        "Check server resource usage trends (CPU, memory, disk I/O)",
-                        "Review IIS logs for new error patterns",
-                        "Consider scaling: add servers or increase VM size",
+                        "Investigate recent deployments", "Check server resource trends",
+                        "Review IIS logs", "Consider scaling",
                     ],
                 })
+
+    # Filter out empty failure types
+    failure_breakdown = {k: v for k, v in failure_types.items() if v}
 
     return {
         "site_name": site.name,
         "site_url": site.url,
-        "has_issues": len(recommendations) > 0,
+        "has_issues": len(recommendations) > 0 or len(failure_breakdown) > 0,
         "summary": {
             "checks_24h": total_checks,
             "failures_24h": len(failures),
             "slow_24h": len(slow_checks),
+            "ok_24h": total_checks - len(failures),
             "failure_rate": round(len(failures) / max(total_checks, 1) * 100, 1),
             "avg_response_ms": round(sum(response_times) / max(len(response_times), 1)),
+            "avg_ttfb_ms": round(sum(ttfb_values) / max(len(ttfb_values), 1)) if ttfb_values else 0,
+            "avg_backend_pct": round(sum(backend_pct_values) / max(len(backend_pct_values), 1)) if backend_pct_values else 0,
             "cold_starts": cold_start_count,
             "error_pages": error_page_count,
+            "bottleneck_backend": bottleneck_counts.get("backend/database", 0),
+            "bottleneck_frontend": bottleneck_counts.get("frontend/rendering", 0),
         },
+        "failure_breakdown": failure_breakdown,
+        "slowness_causes": slowness_causes,
+        "top_slow_resources": top_slow_resources,
+        "top_slow_apis": top_slow_apis,
+        "top_failed_resources": top_failed,
         "recommendations": recommendations,
         "iis_issues_detected": iis_issues_found[:20],
-        "daily_trend": [{"date": k, "failures": v} for k, v in sorted(daily_failures.items())],
+        "daily_trend": [
+            {"date": d, "failures": daily_failures.get(d, 0), "slow": daily_slow.get(d, 0)}
+            for d in sorted(set(list(daily_failures.keys()) + list(daily_slow.keys())))
+        ],
     }
 
 

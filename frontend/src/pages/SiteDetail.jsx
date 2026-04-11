@@ -274,29 +274,129 @@ export default function SiteDetail() {
       )}
 
       {/* IIS / App Pool Diagnostics */}
-      {iisDiag && iisDiag.has_issues && (
+      {iisDiag && iisDiag.summary && (
         <div className="card">
           <div className="card-header">
             <h3>IIS / App Pool Diagnostics</h3>
-            <span className="badge badge-warning">{iisDiag.recommendations?.length || 0} recommendation(s)</span>
+            <span className={`badge ${iisDiag.has_issues ? 'badge-warning' : 'badge-ok'}`}>
+              {iisDiag.has_issues ? `${iisDiag.recommendations?.length || 0} issue(s)` : 'Healthy'}
+            </span>
           </div>
 
           {/* Summary stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '6px', marginBottom: '16px' }}>
             {[
-              { label: 'Checks (24h)', value: iisDiag.summary?.checks_24h },
-              { label: 'Failures', value: iisDiag.summary?.failures_24h, color: iisDiag.summary?.failures_24h > 0 ? 'var(--color-status-critical)' : undefined },
-              { label: 'Slow', value: iisDiag.summary?.slow_24h, color: iisDiag.summary?.slow_24h > 0 ? 'var(--color-status-warning)' : undefined },
-              { label: 'Failure Rate', value: `${iisDiag.summary?.failure_rate || 0}%`, color: iisDiag.summary?.failure_rate > 10 ? 'var(--color-status-critical)' : undefined },
-              { label: 'Cold Starts', value: iisDiag.summary?.cold_starts },
-              { label: 'Error Pages', value: iisDiag.summary?.error_pages, color: iisDiag.summary?.error_pages > 0 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Checks', value: iisDiag.summary.checks_24h },
+              { label: 'OK', value: iisDiag.summary.ok_24h, color: 'var(--color-status-ok)' },
+              { label: 'Failures', value: iisDiag.summary.failures_24h, color: iisDiag.summary.failures_24h > 0 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Slow', value: iisDiag.summary.slow_24h, color: iisDiag.summary.slow_24h > 0 ? 'var(--color-status-warning)' : undefined },
+              { label: 'Fail Rate', value: `${iisDiag.summary.failure_rate}%`, color: iisDiag.summary.failure_rate > 10 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Avg TTFB', value: `${iisDiag.summary.avg_ttfb_ms}ms`, color: iisDiag.summary.avg_ttfb_ms > 5000 ? 'var(--color-status-critical)' : iisDiag.summary.avg_ttfb_ms > 2000 ? 'var(--color-status-warning)' : undefined },
+              { label: 'Backend %', value: `${iisDiag.summary.avg_backend_pct}%`, color: iisDiag.summary.avg_backend_pct > 70 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Cold Starts', value: iisDiag.summary.cold_starts },
+              { label: 'Error Pages', value: iisDiag.summary.error_pages, color: iisDiag.summary.error_pages > 0 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Backend BN', value: iisDiag.summary.bottleneck_backend, color: iisDiag.summary.bottleneck_backend > 0 ? 'var(--color-status-warning)' : undefined },
             ].map((m, i) => (
-              <div key={i} style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '18px', fontWeight: 700, color: m.color || 'var(--color-text)' }}>{m.value ?? '-'}</div>
-                <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{m.label}</div>
+              <div key={i} style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '8px', textAlign: 'center' }}>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: m.color || 'var(--color-text)' }}>{m.value ?? '-'}</div>
+                <div style={{ fontSize: '9px', color: 'var(--color-text-secondary)' }}>{m.label}</div>
               </div>
             ))}
           </div>
+
+          {/* Failure Breakdown */}
+          {iisDiag.failure_breakdown && Object.keys(iisDiag.failure_breakdown).length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '10px' }}>Failure Breakdown by Type</h4>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                {Object.entries(iisDiag.failure_breakdown).map(([type, items]) => (
+                  <div key={type} style={{ background: '#fff5f5', border: '1px solid #feb2b2', borderRadius: 'var(--radius)', padding: '8px 12px', fontSize: '12px' }}>
+                    <strong style={{ color: 'var(--color-status-critical)' }}>{items.length}x</strong>{' '}
+                    <span>{type.replace(/_/g, ' ')}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Show recent failures detail */}
+              {Object.entries(iisDiag.failure_breakdown).map(([type, items]) => (
+                <div key={type} style={{ marginBottom: '8px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', textTransform: 'capitalize' }}>{type.replace(/_/g, ' ')} ({items.length})</div>
+                  <div className="table-container"><table>
+                    <thead><tr><th>Time (CST)</th><th>Response</th><th>Error</th></tr></thead>
+                    <tbody>{items.slice(0, 3).map((f, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>{formatCST(f.time)}</td>
+                        <td style={{ fontSize: '11px' }}>{f.response_ms}ms</td>
+                        <td title={f.error} style={{ fontSize: '11px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{f.error}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Slowness Root Causes */}
+          {iisDiag.slowness_causes?.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Slowness Root Cause Analysis</h4>
+              {iisDiag.slowness_causes.map((c, i) => (
+                <div key={i} style={{ background: '#fffaf0', border: '1px solid #fbd38d', borderLeft: `4px solid ${c.severity === 'high' ? '#e53e3e' : '#dd6b20'}`, borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '12px' }}>{c.cause}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{c.detail}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Top Slow APIs */}
+          {iisDiag.top_slow_apis?.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Slow Backend API Calls</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>API Endpoint</th><th>Avg Duration</th><th>Occurrences</th></tr></thead>
+                <tbody>{iisDiag.top_slow_apis.map((a, i) => (
+                  <tr key={i}>
+                    <td title={a.url} style={{ fontSize: '11px', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{a.url}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-status-critical)', fontSize: '12px' }}>{a.avg_ms}ms</td>
+                    <td style={{ fontSize: '12px' }}>{a.occurrences}x</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
+
+          {/* Top Slow Resources */}
+          {iisDiag.top_slow_resources?.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Slow Static Resources</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>Resource</th><th>Avg Duration</th><th>Occurrences</th></tr></thead>
+                <tbody>{iisDiag.top_slow_resources.map((r, i) => (
+                  <tr key={i}>
+                    <td title={r.name} style={{ fontSize: '11px', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{r.name}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-status-warning)', fontSize: '12px' }}>{r.avg_ms}ms</td>
+                    <td style={{ fontSize: '12px' }}>{r.occurrences}x</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
+
+          {/* Failed Resources */}
+          {iisDiag.top_failed_resources?.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-status-critical)' }}>Failed Resources</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>Resource</th><th>Failures</th></tr></thead>
+                <tbody>{iisDiag.top_failed_resources.map((r, i) => (
+                  <tr key={i}>
+                    <td title={r.name} style={{ fontSize: '11px' }}>{r.name}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-status-critical)', fontSize: '12px' }}>{r.count}x</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
 
           {/* Recommendations */}
           {iisDiag.recommendations?.map((rec, i) => (
@@ -304,54 +404,36 @@ export default function SiteDetail() {
               background: rec.priority === 'high' ? '#fff5f5' : '#fffaf0',
               border: `1px solid ${rec.priority === 'high' ? '#feb2b2' : '#fbd38d'}`,
               borderLeft: `4px solid ${rec.priority === 'high' ? '#e53e3e' : '#dd6b20'}`,
-              borderRadius: 'var(--radius)', padding: '14px 16px', marginBottom: '12px',
+              borderRadius: 'var(--radius)', padding: '12px 14px', marginBottom: '10px',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                 <span className={`badge badge-${rec.priority === 'high' ? 'critical' : 'warning'}`} style={{ fontSize: '10px' }}>{rec.priority}</span>
-                <strong style={{ fontSize: '13px' }}>{rec.category}</strong>
+                <strong style={{ fontSize: '12px' }}>{rec.category}</strong>
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{rec.issue}</div>
-              <div style={{ fontSize: '12px' }}>
-                <strong>Recommended actions:</strong>
-                <ul style={{ margin: '6px 0 0 16px', padding: 0, lineHeight: 1.8 }}>
-                  {rec.actions?.map((a, j) => <li key={j}>{a}</li>)}
-                </ul>
-              </div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>{rec.issue}</div>
+              <ul style={{ margin: '0 0 0 16px', padding: 0, fontSize: '11px', lineHeight: 1.7 }}>
+                {rec.actions?.map((a, j) => <li key={j}>{a}</li>)}
+              </ul>
             </div>
           ))}
 
-          {/* Recent IIS issues detected */}
+          {/* IIS Issues Timeline */}
           {iisDiag.iis_issues_detected?.length > 0 && (
-            <div style={{ marginTop: '12px' }}>
-              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Recent IIS Issues Detected</h4>
-              <div className="table-container">
-                <table>
-                  <thead><tr><th>Time (CST)</th><th>Category</th><th>Severity</th><th>Diagnosis</th></tr></thead>
-                  <tbody>
-                    {iisDiag.iis_issues_detected.slice(0, 10).map((issue, i) => (
-                      <tr key={i}>
-                        <td style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>{formatCST(issue.time)}</td>
-                        <td><span className="badge badge-warning" style={{ fontSize: '10px' }}>{issue.category}</span></td>
-                        <td><span className={`badge badge-${issue.severity === 'critical' ? 'critical' : 'warning'}`} style={{ fontSize: '10px' }}>{issue.severity}</span></td>
-                        <td title={issue.diagnosis} style={{ fontSize: '11px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{issue.diagnosis}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div style={{ marginTop: '8px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>IIS Issues Timeline</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>Time (CST)</th><th>Category</th><th>Severity</th><th>Diagnosis</th></tr></thead>
+                <tbody>{iisDiag.iis_issues_detected.slice(0, 15).map((issue, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>{formatCST(issue.time)}</td>
+                    <td><span className="badge badge-warning" style={{ fontSize: '9px' }}>{issue.category}</span></td>
+                    <td><span className={`badge badge-${issue.severity === 'critical' ? 'critical' : 'warning'}`} style={{ fontSize: '9px' }}>{issue.severity}</span></td>
+                    <td title={issue.diagnosis} style={{ fontSize: '11px', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{issue.diagnosis}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* No IIS issues — show clean status */}
-      {iisDiag && !iisDiag.has_issues && iisDiag.summary && (
-        <div className="card" style={{ textAlign: 'center', padding: '20px' }}>
-          <span style={{ fontSize: '20px', color: 'var(--color-status-ok)' }}>&#10003;</span>
-          <div style={{ fontWeight: 500, fontSize: '14px', marginTop: '4px' }}>IIS Health: No Issues Detected</div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
-            {iisDiag.summary.checks_24h} checks in 24h | {iisDiag.summary.failure_rate}% failure rate | Avg {iisDiag.summary.avg_response_ms}ms
-          </div>
         </div>
       )}
 
