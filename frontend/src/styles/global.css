@@ -359,7 +359,12 @@ th {
 }
 
 /* ===== Mobile Responsive ===== */
+
+/* Viewport meta — ensure proper scaling */
+@viewport { width: device-width; }
+
 @media (max-width: 768px) {
+  /* --- Sidebar → Bottom Tab Bar --- */
   .sidebar {
     width: 100%;
     position: fixed;
@@ -367,11 +372,13 @@ th {
     bottom: 0;
     left: 0;
     right: 0;
-    height: auto;
+    height: 60px;
     flex-direction: row;
     z-index: 200;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
   }
 
   .sidebar-logo {
@@ -383,35 +390,44 @@ th {
     flex-direction: row;
     padding: 0;
     width: 100%;
+    height: 100%;
   }
 
   .sidebar-nav a {
     flex-direction: column;
-    padding: 8px 12px;
-    font-size: 10px;
-    gap: 4px;
+    padding: 6px 4px;
+    font-size: 9px;
+    gap: 2px;
     white-space: nowrap;
     flex: 1;
     text-align: center;
     justify-content: center;
-    min-width: 60px;
+    align-items: center;
+    min-width: 50px;
+    border-left: none !important;
   }
 
   .sidebar-nav a.active {
-    border-left: none;
+    border-left: none !important;
     border-top: 3px solid var(--color-orange);
+    background: rgba(255,255,255,0.15);
   }
 
   .sidebar-nav a svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
-  /* Hide admin section labels on mobile */
+  /* Hide admin section dividers and version on mobile */
   .sidebar-nav > div[style] {
-    display: none;
+    display: none !important;
   }
 
+  .sidebar > div:last-child {
+    display: none !important;
+  }
+
+  /* --- Layout --- */
   .app-layout {
     flex-direction: column;
   }
@@ -421,70 +437,269 @@ th {
   }
 
   .main-content {
-    padding: 16px;
-    padding-bottom: 70px;
+    padding: 12px;
+    padding-bottom: 76px;
     margin-left: 0 !important;
   }
 
+  /* --- Top Bar --- */
+  .top-bar {
+    padding: 0 12px !important;
+    height: 48px !important;
+  }
+
+  /* --- Page Header --- */
   .page-header {
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     align-items: flex-start;
   }
 
   .page-header h2 {
-    font-size: 20px;
+    font-size: 18px;
   }
 
+  /* --- Stat Cards --- */
   .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px;
+    gap: 8px;
   }
 
   .stat-card {
-    padding: 16px;
+    padding: 12px;
+    border-radius: var(--radius);
   }
 
   .stat-card .stat-value {
-    font-size: 24px;
+    font-size: 22px;
   }
 
+  .stat-card .stat-label {
+    font-size: 11px;
+  }
+
+  /* --- Cards --- */
   .card {
-    padding: 16px;
+    padding: 12px;
+    border-radius: var(--radius);
   }
 
+  .card-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .card-header h3 {
+    font-size: 14px;
+  }
+
+  /* --- Forms --- */
   .form-row {
     grid-template-columns: 1fr !important;
+    gap: 10px;
   }
 
-  .table-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    padding: 12px;
   }
 
-  table {
-    min-width: 600px;
-  }
-
-  .btn {
-    padding: 8px 14px;
+  .form-group label {
     font-size: 13px;
   }
 
-  /* Login page */
+  /* --- Tables --- */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -12px;
+    padding: 0 12px;
+  }
+
+  table {
+    min-width: 500px;
+  }
+
+  th, td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  th {
+    font-size: 10px;
+  }
+
+  /* --- Buttons --- */
+  .btn {
+    padding: 10px 16px;
+    font-size: 13px;
+    border-radius: 24px;
+  }
+
+  .btn-primary, .btn-danger, .btn-outline {
+    min-height: 40px;
+  }
+
+  /* --- Login Page --- */
+  .login-container {
+    padding: 16px;
+    align-items: flex-start;
+    padding-top: 60px;
+  }
+
   .login-card {
-    padding: 24px;
-    margin: 0 16px;
+    padding: 24px 20px;
+    margin: 0;
     max-width: 100%;
+    width: 100%;
+    border-radius: var(--radius-lg);
+  }
+
+  .login-card h1 {
+    font-size: 20px;
+  }
+
+  .login-card p {
+    font-size: 13px;
+  }
+
+  .login-card img {
+    max-width: 160px !important;
+  }
+
+  /* --- Badges --- */
+  .badge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  /* --- Modal overlays --- */
+  div[style*="position: fixed"][style*="inset: 0"] > div {
+    margin: 16px !important;
+    max-width: calc(100vw - 32px) !important;
+    max-height: calc(100vh - 32px) !important;
+    overflow-y: auto;
+  }
+
+  /* --- Alert banner on mobile --- */
+  div[style*="linear-gradient"] {
+    padding: 8px 12px !important;
+    font-size: 12px;
+    flex-wrap: wrap;
+    gap: 8px !important;
+  }
+
+  /* --- Toast notifications --- */
+  div[style*="position: fixed"][style*="top: 70"] {
+    top: 8px !important;
+    right: 8px !important;
+    left: 8px !important;
+    max-width: none !important;
+  }
+
+  /* --- Profile dropdown --- */
+  div[style*="position: absolute"][style*="right: 0"][style*="minWidth: 200"] {
+    right: -12px !important;
+    min-width: 180px !important;
+  }
+
+  /* --- Recharts on mobile --- */
+  .recharts-wrapper {
+    font-size: 10px;
   }
 }
 
+/* === Small phones === */
 @media (max-width: 480px) {
   .stats-grid {
     grid-template-columns: 1fr !important;
+    gap: 6px;
   }
 
   .stat-card .stat-value {
     font-size: 20px;
+  }
+
+  .sidebar-nav a {
+    font-size: 8px;
+    padding: 6px 2px;
+    min-width: 44px;
+  }
+
+  .sidebar-nav a svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .main-content {
+    padding: 8px;
+    padding-bottom: 72px;
+  }
+
+  .page-header h2 {
+    font-size: 16px;
+  }
+
+  .card {
+    padding: 10px;
+  }
+
+  table {
+    min-width: 400px;
+  }
+
+  th, td {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .login-container {
+    padding: 12px;
+    padding-top: 40px;
+  }
+
+  .login-card {
+    padding: 20px 16px;
+  }
+}
+
+/* === Landscape phone === */
+@media (max-height: 500px) and (orientation: landscape) {
+  .sidebar {
+    height: 48px;
+  }
+
+  .sidebar-nav a {
+    padding: 4px 8px;
+    font-size: 9px;
+  }
+
+  .login-container {
+    padding-top: 20px;
+  }
+}
+
+/* === Touch-friendly — all touch devices === */
+@media (hover: none) and (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .sidebar-nav a {
+    min-height: 48px;
+  }
+
+  input, select, textarea {
+    min-height: 44px;
   }
 }

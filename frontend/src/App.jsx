@@ -100,7 +100,7 @@ function TopBar({ user, setUser }) {
     .join('');
 
   return (
-    <div style={{
+    <div className="top-bar" style={{
       height: 56, background: 'var(--color-bg-white)', borderBottom: '1px solid var(--color-border)',
       display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 32px',
       position: 'sticky', top: 0, zIndex: 50,
