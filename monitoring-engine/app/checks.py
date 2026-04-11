@@ -244,6 +244,95 @@ async def _detect_db_issues(page, response_time_ms: float) -> dict:
     return result
 
 
+async def _detect_error_page_redirect(page, post_url: str, pre_url: str, response_ms: float) -> dict | None:
+    """Detect if login redirected to an error page instead of the expected page.
+
+    Checks for known error pages like GenericError.aspx, Error.aspx, etc.
+    Returns a full result dict if error page detected, None otherwise.
+    """
+    lower_url = post_url.lower()
+
+    # Known error page patterns — add more as discovered
+    error_pages = [
+        ("genericerror.aspx", "GenericError.aspx", "Application error — possible code or configuration issue"),
+        ("generic_error", "GenericError", "Application error — possible code or configuration issue"),
+        ("error.aspx", "Error.aspx", "Application error page"),
+        ("errorpage.aspx", "ErrorPage.aspx", "Application error page"),
+        ("apperror.aspx", "AppError.aspx", "Application error"),
+        ("servererror.aspx", "ServerError.aspx", "Server error page"),
+        ("500.aspx", "500.aspx", "HTTP 500 error page"),
+        ("500.html", "500.html", "HTTP 500 error page"),
+        ("oops", "Oops page", "Application error"),
+        ("something-went-wrong", "Something went wrong", "Application error"),
+        ("accessdenied.aspx", "AccessDenied.aspx", "Access denied — possible permission or role issue"),
+        ("unauthorized.aspx", "Unauthorized.aspx", "Unauthorized access"),
+        ("sessionexpired.aspx", "SessionExpired.aspx", "Session expired during login"),
+        ("maintenance.aspx", "Maintenance.aspx", "Site is under maintenance"),
+        ("offline.aspx", "Offline.aspx", "Site is offline"),
+    ]
+
+    for pattern, page_name, base_desc in error_pages:
+        if pattern in lower_url:
+            logger.error(f"Error page redirect detected: {post_url} (pattern: {pattern})")
+
+            # Try to extract error details from the page
+            error_detail = ""
+            try:
+                body_text = await page.inner_text("body")
+                # Clean and truncate
+                clean_text = " ".join(body_text.split())[:500]
+                if clean_text and len(clean_text) > 20:
+                    error_detail = clean_text
+            except Exception:
+                pass
+
+            # Try to find specific error elements
+            error_element_text = ""
+            for sel in [".error-message", "#errorMessage", ".error", "#error",
+                        ".alert-danger", "[role='alert']", "h1", "h2", ".content", "#content"]:
+                try:
+                    el = await page.query_selector(sel)
+                    if el:
+                        txt = (await el.inner_text()).strip()
+                        if txt and len(txt) > 10 and len(txt) < 500:
+                            error_element_text = txt
+                            break
+                except Exception:
+                    pass
+
+            # Build diagnostic message
+            diagnosis = f"Post-login redirect to {page_name} — {base_desc}"
+            if error_element_text:
+                diagnosis += f". Page says: \"{error_element_text[:200]}\""
+
+            error_msg = (
+                f"APPLICATION ERROR: Login redirected to {page_name} instead of expected page. "
+                f"URL: {post_url}. "
+                f"This indicates an issue in application code, configuration, or server-side processing. "
+                f"{('Detail: ' + error_element_text[:200]) if error_element_text else ''}"
+            ).strip()
+
+            return {
+                "status": "critical",
+                "response_time_ms": response_ms,
+                "status_code": 200,
+                "error_message": error_msg,
+                "details": json.dumps({
+                    "error_page_redirect": True,
+                    "error_page": page_name,
+                    "expected_url_changed": pre_url != post_url,
+                    "post_login_url": post_url,
+                    "diagnosis": diagnosis,
+                    "page_error_text": error_element_text[:300] if error_element_text else "",
+                    "page_body_preview": error_detail[:300] if error_detail else "",
+                    "response_time_ms": int(response_ms),
+                    "region": settings.MONITOR_REGION,
+                }),
+            }
+
+    return None
+
+
 async def _detect_login_failure(page, pre_login_url: str) -> str | None:
     """Detect if login failed. Returns error message or None if login looks OK."""
     current_url = page.url
@@ -423,6 +512,14 @@ async def run_login_check(
 
             post_login_url = bpage.url
             logger.info(f"Post-login URL: {post_login_url}")
+
+            # === PRE-CHECK: Detect error page redirects ===
+            error_page_result = await _detect_error_page_redirect(
+                bpage, post_login_url, pre_login_url, actual_response_ms
+            )
+            if error_page_result:
+                await browser.close()
+                return error_page_result
 
             # === STEP 0: Check for database / SQL Server issues ===
             db_check = await _detect_db_issues(bpage, actual_response_ms)
