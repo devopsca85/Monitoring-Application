@@ -160,6 +160,41 @@ export default function SiteDetail() {
             {latestPerf.region && <span className="badge badge-ok" style={{ fontSize: '11px' }}>{latestPerf.region}</span>}
           </div>
 
+          {/* Bottleneck Analysis */}
+          {latestPerf.bottleneck && (
+            <div style={{
+              background: latestPerf.bottleneck === 'backend/database' ? '#fff5f5' : '#fffaf0',
+              border: `1px solid ${latestPerf.bottleneck === 'backend/database' ? '#feb2b2' : '#fbd38d'}`,
+              borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: '16px',
+              display: 'flex', alignItems: 'center', gap: '12px',
+            }}>
+              <span style={{ fontSize: '20px' }}>{latestPerf.bottleneck === 'backend/database' ? '\uD83D\uDDC4' : '\u26A1'}</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '13px', color: latestPerf.bottleneck === 'backend/database' ? 'var(--color-status-critical)' : 'var(--color-status-warning)' }}>
+                  Bottleneck: {latestPerf.bottleneck === 'backend/database' ? 'Backend / Database' : 'Frontend / Rendering'}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{latestPerf.bottleneck_detail}</div>
+              </div>
+            </div>
+          )}
+
+          {/* DB Latency Note */}
+          {latestPerf.db_latency_note && (
+            <div style={{
+              background: '#fff5f5', border: '1px solid #feb2b2',
+              borderRadius: 'var(--radius)', padding: '12px 16px', marginBottom: '16px',
+              display: 'flex', alignItems: 'center', gap: '12px',
+            }}>
+              <span style={{ fontSize: '20px' }}>\uD83D\uDDC4</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-status-critical)' }}>
+                  Database Latency Detected {latestPerf.db_category && `(${latestPerf.db_category})`}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{latestPerf.db_latency_note}</div>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '16px' }}>
             {[
               { label: 'TTFB', value: latestPerf.ttfb_ms, unit: 'ms', color: latestPerf.ttfb_ms > 2000 ? 'var(--color-status-critical)' : latestPerf.ttfb_ms > 800 ? 'var(--color-status-warning)' : 'var(--color-status-ok)' },
@@ -174,6 +209,7 @@ export default function SiteDetail() {
               { label: 'Resources', value: latestPerf.resource_count, unit: '' },
               { label: 'Scripts', value: latestPerf.script_count, unit: '' },
               { label: 'Transfer', value: latestPerf.total_transfer_kb, unit: 'KB' },
+              { label: 'Backend %', value: latestPerf.backend_time_pct, unit: '%', color: latestPerf.backend_time_pct > 70 ? 'var(--color-status-critical)' : latestPerf.backend_time_pct > 50 ? 'var(--color-status-warning)' : 'var(--color-status-ok)' },
             ].map((m, i) => (
               <div key={i} style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '10px 12px', textAlign: 'center' }}>
                 <div style={{ fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: m.color || 'var(--color-text)' }}>

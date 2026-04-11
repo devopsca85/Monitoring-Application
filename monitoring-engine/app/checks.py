@@ -138,6 +138,112 @@ async def _check_indicator_strict(page, indicator: str) -> bool:
     return False
 
 
+async def _detect_db_issues(page, response_time_ms: float) -> dict:
+    """Detect SQL Server / database related issues on the page.
+
+    Returns dict with:
+      is_db_issue: bool
+      diagnosis: str (human-readable)
+      category: str (timeout, connection, deadlock, slow_query, latency)
+    """
+    result = {"is_db_issue": False, "diagnosis": "", "category": ""}
+
+    # 1. Check page for SQL / database error messages
+    try:
+        page_html = await page.content()
+        page_lower = page_html.lower()
+
+        sql_error_patterns = [
+            # SQL Server specific
+            ("sqlexception", "SQL Server exception"),
+            ("sql server", "SQL Server error"),
+            ("sqlclient", "SQL Client error"),
+            ("system.data.sqlclient", "SQL Server connection error"),
+            ("execution timeout expired", "SQL query timeout"),
+            ("timeout expired", "Database timeout"),
+            ("the wait operation timed out", "Database wait timeout"),
+            ("a transport-level error", "SQL Server transport error"),
+            ("cannot open database", "Database connection failed"),
+            ("login failed for user", "Database authentication failed"),
+            ("deadlock", "SQL Server deadlock detected"),
+            ("transaction was deadlocked", "SQL deadlock victim"),
+            ("connection was forcibly closed", "Database connection dropped"),
+            ("the underlying provider failed on open", "Database connection failure"),
+            ("a network-related or instance-specific error", "SQL Server unreachable"),
+            ("server is not found or not accessible", "SQL Server not accessible"),
+            ("connection pool", "Database connection pool exhausted"),
+            ("max pool size was reached", "Connection pool exhausted"),
+            # Generic database
+            ("database error", "Database error"),
+            ("database is unavailable", "Database unavailable"),
+            ("database connection", "Database connection issue"),
+            ("db connection", "Database connection issue"),
+            ("internal server error", None),  # Check further
+            ("500", None),  # Generic, needs context
+            # ASP.NET specific
+            ("server error in", "ASP.NET server error"),
+            ("runtime error", "ASP.NET runtime error"),
+            ("unhandled exception", "Unhandled server exception"),
+            ("yellow screen of death", "ASP.NET error page"),
+            ("stack trace:", "Server stack trace visible"),
+        ]
+
+        for pattern, desc in sql_error_patterns:
+            if pattern in page_lower:
+                if desc:
+                    result["is_db_issue"] = True
+                    result["diagnosis"] = desc
+                    # Categorize
+                    if "timeout" in pattern or "timed out" in pattern:
+                        result["category"] = "timeout"
+                    elif "deadlock" in pattern:
+                        result["category"] = "deadlock"
+                    elif "connection" in pattern or "pool" in pattern or "open" in pattern:
+                        result["category"] = "connection"
+                    elif "login failed" in pattern:
+                        result["category"] = "db_auth"
+                    else:
+                        result["category"] = "sql_error"
+
+                    # Try to extract the actual error text
+                    try:
+                        body_text = await page.inner_text("body")
+                        for line in body_text.split("\n"):
+                            line_lower = line.strip().lower()
+                            if pattern in line_lower and len(line.strip()) < 500:
+                                result["diagnosis"] = f"{desc}: {line.strip()[:200]}"
+                                break
+                    except Exception:
+                        pass
+
+                    logger.warning(f"DB issue detected: {result['category']} — {result['diagnosis']}")
+                    return result
+    except Exception as e:
+        logger.warning(f"DB issue detection page scan failed: {e}")
+
+    # 2. Analyze response time for backend latency indicators
+    if response_time_ms > 15000:
+        # Very slow response — likely database/backend issue
+        result["is_db_issue"] = True
+        result["category"] = "latency"
+        result["diagnosis"] = (
+            f"Severe backend latency detected — login took {int(response_time_ms)}ms. "
+            f"This typically indicates SQL Server query delays, connection pool exhaustion, "
+            f"or heavy database load."
+        )
+        logger.warning(f"Backend latency: {int(response_time_ms)}ms — likely DB issue")
+    elif response_time_ms > 8000:
+        # Moderately slow — possible DB issue
+        result["category"] = "latency"
+        result["diagnosis"] = (
+            f"Elevated backend latency — login took {int(response_time_ms)}ms. "
+            f"May indicate database slowness or backend processing delays."
+        )
+        # Not flagged as is_db_issue for moderate — just informational
+
+    return result
+
+
 async def _detect_login_failure(page, pre_login_url: str) -> str | None:
     """Detect if login failed. Returns error message or None if login looks OK."""
     current_url = page.url
@@ -318,10 +424,37 @@ async def run_login_check(
             post_login_url = bpage.url
             logger.info(f"Post-login URL: {post_login_url}")
 
+            # === STEP 0: Check for database / SQL Server issues ===
+            db_check = await _detect_db_issues(bpage, actual_response_ms)
+
+            if db_check["is_db_issue"]:
+                category = db_check["category"]
+                diagnosis = db_check["diagnosis"]
+                error_msg = f"DATABASE ISSUE ({category.upper()}): {diagnosis}"
+                logger.error(f"DB issue for {site['url']}: {error_msg}")
+                await browser.close()
+                return {
+                    "status": "critical",
+                    "response_time_ms": actual_response_ms,
+                    "status_code": 200,
+                    "error_message": error_msg,
+                    "details": json.dumps({
+                        "db_issue": True,
+                        "db_category": category,
+                        "db_diagnosis": diagnosis,
+                        "response_time_ms": int(actual_response_ms),
+                        "region": settings.MONITOR_REGION,
+                    }),
+                }
+
             # === STEP 1: Detect login failure ===
             failure_msg = await _detect_login_failure(bpage, pre_login_url)
 
             if failure_msg:
+                # Enrich failure message with latency context if response was slow
+                if actual_response_ms > 8000 and db_check.get("diagnosis"):
+                    failure_msg = f"{failure_msg} | POSSIBLE DB LATENCY: {db_check['diagnosis']}"
+
                 logger.warning(f"Login FAILED for {site['url']}: {failure_msg}")
                 await browser.close()
                 return {
@@ -329,6 +462,11 @@ async def run_login_check(
                     "response_time_ms": actual_response_ms,
                     "status_code": 200,
                     "error_message": failure_msg,
+                    "details": json.dumps({
+                        "db_latency_note": db_check.get("diagnosis", ""),
+                        "response_time_ms": int(actual_response_ms),
+                        "region": settings.MONITOR_REGION,
+                    }) if db_check.get("diagnosis") else "",
                 }
 
             # === STEP 2: Check expected post-login page ===
@@ -388,6 +526,30 @@ async def run_login_check(
             # Collect performance metrics after login
             login_perf = await collect_performance_metrics(bpage)
             login_perf_summary = format_perf_summary(login_perf, settings.MONITOR_REGION)
+
+            # Add DB latency context to perf summary
+            if db_check.get("diagnosis"):
+                login_perf_summary["db_latency_note"] = db_check["diagnosis"]
+                login_perf_summary["db_category"] = db_check.get("category", "")
+
+            # Analyze TTFB to determine if delay is backend vs frontend
+            ttfb = login_perf_summary.get("ttfb_ms", 0)
+            total_load = login_perf_summary.get("total_load_ms", 0)
+            if ttfb > 0 and total_load > 0:
+                backend_pct = round((ttfb / total_load) * 100) if total_load else 0
+                login_perf_summary["backend_time_pct"] = backend_pct
+                if ttfb > 5000:
+                    login_perf_summary["bottleneck"] = "backend/database"
+                    login_perf_summary["bottleneck_detail"] = (
+                        f"TTFB is {ttfb}ms ({backend_pct}% of total load) — "
+                        f"server/database is the primary bottleneck"
+                    )
+                elif total_load - ttfb > 5000:
+                    login_perf_summary["bottleneck"] = "frontend/rendering"
+                    login_perf_summary["bottleneck_detail"] = (
+                        f"Frontend rendering took {total_load - ttfb}ms after server response — "
+                        f"JS execution or resource loading is the bottleneck"
+                    )
 
             # === STEP 3: Validate subpages (if configured) ===
             overall_status = "ok"
