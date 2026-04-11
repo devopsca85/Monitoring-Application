@@ -6,9 +6,13 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 
-function parseSubpageDetails(details) {
-  if (!details) return [];
-  try { return JSON.parse(details); } catch { return []; }
+function parseDetails(details) {
+  if (!details) return { subpages: [], perf: null };
+  try {
+    const parsed = JSON.parse(details);
+    if (Array.isArray(parsed)) return { subpages: parsed, perf: null };
+    return { subpages: parsed.subpages || [], perf: parsed.perf || null };
+  } catch { return { subpages: [], perf: null }; }
 }
 
 export default function SiteDetail() {
@@ -53,7 +57,9 @@ export default function SiteDetail() {
 
   // Get the latest result's subpage details for the summary card
   const latestResult = results.length > 0 ? results[results.length - 1] : null;
-  const latestSubpages = latestResult ? parseSubpageDetails(latestResult.details) : [];
+  const latestParsed = latestResult ? parseDetails(latestResult.details) : { subpages: [], perf: null };
+  const latestSubpages = latestParsed.subpages;
+  const latestPerf = latestParsed.perf;
 
   return (
     <div>
@@ -146,6 +152,89 @@ export default function SiteDetail() {
         </div>
       )}
 
+      {/* Performance Metrics */}
+      {latestPerf && (
+        <div className="card">
+          <div className="card-header">
+            <h3>Performance Metrics (Latest Check)</h3>
+            {latestPerf.region && <span className="badge badge-ok" style={{ fontSize: '11px' }}>{latestPerf.region}</span>}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+            {[
+              { label: 'TTFB', value: latestPerf.ttfb_ms, unit: 'ms', color: latestPerf.ttfb_ms > 2000 ? 'var(--color-status-critical)' : latestPerf.ttfb_ms > 800 ? 'var(--color-status-warning)' : 'var(--color-status-ok)' },
+              { label: 'DOM Loaded', value: latestPerf.dom_content_loaded_ms, unit: 'ms' },
+              { label: 'DOM Complete', value: latestPerf.dom_complete_ms, unit: 'ms' },
+              { label: 'Total Load', value: latestPerf.total_load_ms, unit: 'ms', color: latestPerf.total_load_ms > 10000 ? 'var(--color-status-critical)' : latestPerf.total_load_ms > 5000 ? 'var(--color-status-warning)' : 'var(--color-status-ok)' },
+              { label: 'First Paint', value: latestPerf.first_paint_ms, unit: 'ms' },
+              { label: 'FCP', value: latestPerf.first_contentful_paint_ms, unit: 'ms' },
+              { label: 'DNS', value: latestPerf.dns_ms, unit: 'ms' },
+              { label: 'TCP/TLS', value: (latestPerf.tcp_ms || 0) + (latestPerf.tls_ms || 0), unit: 'ms' },
+              { label: 'Download', value: latestPerf.download_ms, unit: 'ms' },
+              { label: 'Resources', value: latestPerf.resource_count, unit: '' },
+              { label: 'Scripts', value: latestPerf.script_count, unit: '' },
+              { label: 'Transfer', value: latestPerf.total_transfer_kb, unit: 'KB' },
+            ].map((m, i) => (
+              <div key={i} style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '10px 12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: m.color || 'var(--color-text)' }}>
+                  {m.value != null ? m.value : '-'}<span style={{ fontSize: '11px', fontWeight: 400 }}>{m.unit}</span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {latestPerf.slow_resources && latestPerf.slow_resources.length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Slow Resources (&gt;1s)</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>Resource</th><th>Type</th><th>Duration</th><th>Size</th></tr></thead>
+                <tbody>{latestPerf.slow_resources.map((r, i) => (
+                  <tr key={i}>
+                    <td title={r.name} style={{ fontSize: '12px', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</td>
+                    <td><span className="badge badge-warning" style={{ fontSize: '10px' }}>{r.type}</span></td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-status-warning)' }}>{r.duration}ms</td>
+                    <td style={{ fontSize: '12px' }}>{r.size ? `${Math.round(r.size / 1024)}KB` : '-'}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
+
+          {latestPerf.slow_api_calls && latestPerf.slow_api_calls.length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Slow API Calls (&gt;2s)</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>API Endpoint</th><th>Duration</th><th>Size</th></tr></thead>
+                <tbody>{latestPerf.slow_api_calls.map((r, i) => (
+                  <tr key={i}>
+                    <td title={r.url} style={{ fontSize: '12px' }}>{r.url}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-status-critical)' }}>{r.duration}ms</td>
+                    <td style={{ fontSize: '12px' }}>{r.size ? `${Math.round(r.size / 1024)}KB` : '-'}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
+
+          {latestPerf.failed_resources && latestPerf.failed_resources.length > 0 && (
+            <div>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', color: 'var(--color-status-critical)' }}>Failed Resources</h4>
+              <div className="table-container"><table>
+                <thead><tr><th>Resource</th><th>Type</th><th>Status</th></tr></thead>
+                <tbody>{latestPerf.failed_resources.map((r, i) => (
+                  <tr key={i}>
+                    <td title={r.name} style={{ fontSize: '12px' }}>{r.name}</td>
+                    <td>{r.type}</td>
+                    <td><span className="badge badge-critical" style={{ fontSize: '10px' }}>{r.status || 'Failed'}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Configured subpages */}
       {site.pages && site.pages.length > 0 && (
         <div className="card">
@@ -205,7 +294,7 @@ export default function SiteDetail() {
             </thead>
             <tbody>
               {results.slice(-20).reverse().map((r) => {
-                const subpages = parseSubpageDetails(r.details);
+                const subpages = parseDetails(r.details).subpages;
                 const hasSubpages = subpages.length > 0;
                 const isExpanded = expandedRow === r.id;
                 const subOk = subpages.filter((s) => s.status === 'ok').length;

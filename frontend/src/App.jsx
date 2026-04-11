@@ -43,7 +43,7 @@ function App() {
   return (
     <div className="app-layout">
       <Sidebar user={user} />
-      <div style={{ flex: 1, marginLeft: 260, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <div className="main-wrapper" style={{ flex: 1, marginLeft: 260, display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <AlertMonitor />
         <TopBar user={user} setUser={setUser} />
         <main className="main-content" style={{ marginLeft: 0 }}>
@@ -220,6 +220,9 @@ function Sidebar({ user }) {
           </>
         )}
       </nav>
+      <div style={{ padding: '12px 24px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
+        v1.0
+      </div>
     </aside>
   );
 }

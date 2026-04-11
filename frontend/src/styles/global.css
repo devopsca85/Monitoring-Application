@@ -357,3 +357,134 @@ th {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: auto;
+    flex-direction: row;
+    z-index: 200;
+    overflow-x: auto;
+    padding: 0;
+  }
+
+  .sidebar-logo {
+    display: none;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    width: 100%;
+  }
+
+  .sidebar-nav a {
+    flex-direction: column;
+    padding: 8px 12px;
+    font-size: 10px;
+    gap: 4px;
+    white-space: nowrap;
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+    min-width: 60px;
+  }
+
+  .sidebar-nav a.active {
+    border-left: none;
+    border-top: 3px solid var(--color-orange);
+  }
+
+  .sidebar-nav a svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Hide admin section labels on mobile */
+  .sidebar-nav > div[style] {
+    display: none;
+  }
+
+  .app-layout {
+    flex-direction: column;
+  }
+
+  .main-wrapper {
+    margin-left: 0 !important;
+  }
+
+  .main-content {
+    padding: 16px;
+    padding-bottom: 70px;
+    margin-left: 0 !important;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .page-header h2 {
+    font-size: 20px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 24px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 600px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  /* Login page */
+  .login-card {
+    padding: 24px;
+    margin: 0 16px;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stat-card .stat-value {
+    font-size: 20px;
+  }
+}

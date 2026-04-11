@@ -5,6 +5,7 @@ import time
 from playwright.async_api import async_playwright
 
 from app.config import settings
+from app.perf import collect_performance_metrics, format_perf_summary
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,10 @@ async def run_uptime_check(site: dict) -> dict:
             elapsed = (time.time() - start) * 1000
             status_code = response.status if response else 0
 
+            # Collect performance metrics
+            perf = await collect_performance_metrics(page)
+            perf_summary = format_perf_summary(perf, settings.MONITOR_REGION)
+
             await browser.close()
 
             if status_code >= 500:
@@ -35,6 +40,7 @@ async def run_uptime_check(site: dict) -> dict:
                     "response_time_ms": elapsed,
                     "status_code": status_code,
                     "error_message": f"HTTP {status_code} Server Error",
+                    "details": json.dumps({"perf": perf_summary}),
                 }
 
             if status_code == 404:
@@ -58,6 +64,7 @@ async def run_uptime_check(site: dict) -> dict:
                 "response_time_ms": elapsed,
                 "status_code": status_code,
                 "error_message": "",
+                "details": json.dumps({"perf": perf_summary}),
             }
     except Exception as e:
         elapsed = (time.time() - start) * 1000
@@ -378,6 +385,10 @@ async def run_login_check(
                         ),
                     }
 
+            # Collect performance metrics after login
+            login_perf = await collect_performance_metrics(bpage)
+            login_perf_summary = format_perf_summary(login_perf, settings.MONITOR_REGION)
+
             # === STEP 3: Validate subpages (if configured) ===
             overall_status = "ok"
             if pages:
@@ -502,6 +513,10 @@ async def run_login_check(
 
             await browser.close()
 
+            details = {
+                "perf": login_perf_summary,
+                "subpages": page_results,
+            }
             return {
                 "status": overall_status,
                 "response_time_ms": actual_response_ms,
@@ -509,7 +524,7 @@ async def run_login_check(
                 "error_message": next(
                     (r["error"] for r in page_results if r["error"]), ""
                 ),
-                "details": json.dumps(page_results) if page_results else "",
+                "details": json.dumps(details),
             }
     except Exception as e:
         elapsed = (time.time() - start) * 1000
