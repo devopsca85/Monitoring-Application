@@ -255,6 +255,29 @@ def debug_alerts(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/daily-report/preview")
+def preview_daily_report(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Preview the daily report data (without sending)."""
+    from app.services.daily_report import generate_daily_report
+    return generate_daily_report(db)
+
+
+@router.post("/daily-report/send")
+async def trigger_daily_report(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Manually trigger the daily report email."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.services.daily_report import send_daily_report
+    await send_daily_report()
+    return {"status": "Daily report sent"}
+
+
 @router.delete("/alerts/history", status_code=200)
 def delete_alert_history(
     db: Session = Depends(get_db),

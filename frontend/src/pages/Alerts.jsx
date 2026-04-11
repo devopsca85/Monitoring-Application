@@ -138,9 +138,9 @@ export default function Alerts() {
             {history.length > 0 ? (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>When (CST)</th><th>Duration</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Site</th><th>Severity</th><th>Message</th><th>When (CST)</th><th>Duration</th><th>Status</th><th>Action</th></tr></thead>
                   <tbody>
-                    {history.slice(0, 15).map((a) => (
+                    {history.filter((a) => !a.false_positive).slice(0, 15).map((a) => (
                       <tr key={a.id} style={{ background: !a.resolved ? 'rgba(229,62,62,0.04)' : undefined }}>
                         <td><Link to={`/sites/${a.site_id}`} style={{ fontWeight: 500 }}>{a.site_name || `Site #${a.site_id}`}</Link></td>
                         <td><span className={`badge badge-${a.alert_type || 'critical'}`}>{a.alert_type || 'critical'}</span></td>
@@ -148,6 +148,10 @@ export default function Alerts() {
                         <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{formatCST(a.created_at)}</td>
                         <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
                         <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Active</span>}</td>
+                        <td style={{ display: 'flex', gap: '4px' }}>
+                          {!a.resolved && <button onClick={() => handleResolve(a.id)} className="btn btn-primary" style={{ padding: '3px 8px', fontSize: '10px' }}>Resolve</button>}
+                          <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '10px' }}>False +</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

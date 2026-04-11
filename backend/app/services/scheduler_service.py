@@ -102,6 +102,33 @@ async def trigger_check_for_site(site_id: int) -> dict:
         return {"error": str(e)}
 
 
+async def _run_daily_report_scheduler():
+    """Runs the daily report at 9:00 AM CST every day."""
+    from app.services.daily_report import send_daily_report
+    from datetime import datetime, timedelta, timezone
+
+    CST_OFFSET = timedelta(hours=-6)
+    last_report_date = None
+
+    while True:
+        try:
+            utc_now = datetime.now(timezone.utc)
+            cst_now = utc_now + CST_OFFSET
+            today = cst_now.date()
+
+            if cst_now.hour == 9 and cst_now.minute < 2 and last_report_date != today:
+                logger.info("Daily report: triggering 9 AM CST report")
+                last_report_date = today
+                try:
+                    await send_daily_report()
+                except Exception as e:
+                    logger.error(f"Daily report send failed: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"Daily report scheduler error: {e}")
+
+        await asyncio.sleep(60)  # Check every minute
+
+
 async def _run_scheduler_loop():
     """Background loop that triggers checks for all active sites on their intervals."""
     logger.info("Background scheduler started")
@@ -161,17 +188,24 @@ async def _safe_trigger(site_id: int, name: str, last_checked: dict):
         _running_checks.discard(site_id)
 
 
+_daily_report_task = None
+
+
 def start_scheduler():
-    """Start the background scheduler."""
-    global _scheduler_task
+    """Start the background scheduler + daily report scheduler."""
+    global _scheduler_task, _daily_report_task
     _scheduler_task = asyncio.create_task(_run_scheduler_loop())
-    logger.info("Background monitoring scheduler initialized")
+    _daily_report_task = asyncio.create_task(_run_daily_report_scheduler())
+    logger.info("Background monitoring scheduler + daily report scheduler initialized")
 
 
 def stop_scheduler():
-    """Stop the background scheduler."""
-    global _scheduler_task
+    """Stop all schedulers."""
+    global _scheduler_task, _daily_report_task
     if _scheduler_task:
         _scheduler_task.cancel()
         _scheduler_task = None
-        logger.info("Background monitoring scheduler stopped")
+    if _daily_report_task:
+        _daily_report_task.cancel()
+        _daily_report_task = None
+    logger.info("All schedulers stopped")
