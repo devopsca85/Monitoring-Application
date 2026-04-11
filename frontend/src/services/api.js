@@ -52,6 +52,7 @@ export const triggerCheck = (siteId) => api.post(`/monitoring/trigger/${siteId}`
 export const acknowledgeAlerts = () => api.post('/monitoring/alerts/acknowledge');
 export const deleteAlertHistory = () => api.delete('/monitoring/alerts/history');
 export const getSlownessAnalysis = () => api.get('/monitoring/slowness-analysis');
+export const getIisDiagnostics = (siteId) => api.get(`/monitoring/iis-diagnostics/${siteId}`);
 export const getSitesStatus = () => api.get('/monitoring/sites-status');
 
 // Admin — Users

@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getSite, getResults, triggerCheck } from '../services/api';
+import { getSite, getResults, triggerCheck, getIisDiagnostics } from '../services/api';
 import { formatCST, formatCSTTime } from '../services/time';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -22,10 +22,12 @@ export default function SiteDetail() {
   const [checking, setChecking] = useState(false);
   const [checkMsg, setCheckMsg] = useState('');
   const [expandedRow, setExpandedRow] = useState(null);
+  const [iisDiag, setIisDiag] = useState(null);
 
   const loadData = () => {
     getSite(id).then((r) => setSite(r.data)).catch(() => {});
     getResults(id, 100).then((r) => setResults(r.data.reverse())).catch(() => {});
+    getIisDiagnostics(id).then((r) => setIisDiag(r.data)).catch(() => {});
   };
 
   useEffect(() => { loadData(); }, [id]);
@@ -268,6 +270,88 @@ export default function SiteDetail() {
               </table></div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* IIS / App Pool Diagnostics */}
+      {iisDiag && iisDiag.has_issues && (
+        <div className="card">
+          <div className="card-header">
+            <h3>IIS / App Pool Diagnostics</h3>
+            <span className="badge badge-warning">{iisDiag.recommendations?.length || 0} recommendation(s)</span>
+          </div>
+
+          {/* Summary stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+            {[
+              { label: 'Checks (24h)', value: iisDiag.summary?.checks_24h },
+              { label: 'Failures', value: iisDiag.summary?.failures_24h, color: iisDiag.summary?.failures_24h > 0 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Slow', value: iisDiag.summary?.slow_24h, color: iisDiag.summary?.slow_24h > 0 ? 'var(--color-status-warning)' : undefined },
+              { label: 'Failure Rate', value: `${iisDiag.summary?.failure_rate || 0}%`, color: iisDiag.summary?.failure_rate > 10 ? 'var(--color-status-critical)' : undefined },
+              { label: 'Cold Starts', value: iisDiag.summary?.cold_starts },
+              { label: 'Error Pages', value: iisDiag.summary?.error_pages, color: iisDiag.summary?.error_pages > 0 ? 'var(--color-status-critical)' : undefined },
+            ].map((m, i) => (
+              <div key={i} style={{ background: 'var(--color-bg)', borderRadius: 'var(--radius)', padding: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: m.color || 'var(--color-text)' }}>{m.value ?? '-'}</div>
+                <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)' }}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Recommendations */}
+          {iisDiag.recommendations?.map((rec, i) => (
+            <div key={i} style={{
+              background: rec.priority === 'high' ? '#fff5f5' : '#fffaf0',
+              border: `1px solid ${rec.priority === 'high' ? '#feb2b2' : '#fbd38d'}`,
+              borderLeft: `4px solid ${rec.priority === 'high' ? '#e53e3e' : '#dd6b20'}`,
+              borderRadius: 'var(--radius)', padding: '14px 16px', marginBottom: '12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <span className={`badge badge-${rec.priority === 'high' ? 'critical' : 'warning'}`} style={{ fontSize: '10px' }}>{rec.priority}</span>
+                <strong style={{ fontSize: '13px' }}>{rec.category}</strong>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>{rec.issue}</div>
+              <div style={{ fontSize: '12px' }}>
+                <strong>Recommended actions:</strong>
+                <ul style={{ margin: '6px 0 0 16px', padding: 0, lineHeight: 1.8 }}>
+                  {rec.actions?.map((a, j) => <li key={j}>{a}</li>)}
+                </ul>
+              </div>
+            </div>
+          ))}
+
+          {/* Recent IIS issues detected */}
+          {iisDiag.iis_issues_detected?.length > 0 && (
+            <div style={{ marginTop: '12px' }}>
+              <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Recent IIS Issues Detected</h4>
+              <div className="table-container">
+                <table>
+                  <thead><tr><th>Time (CST)</th><th>Category</th><th>Severity</th><th>Diagnosis</th></tr></thead>
+                  <tbody>
+                    {iisDiag.iis_issues_detected.slice(0, 10).map((issue, i) => (
+                      <tr key={i}>
+                        <td style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>{formatCST(issue.time)}</td>
+                        <td><span className="badge badge-warning" style={{ fontSize: '10px' }}>{issue.category}</span></td>
+                        <td><span className={`badge badge-${issue.severity === 'critical' ? 'critical' : 'warning'}`} style={{ fontSize: '10px' }}>{issue.severity}</span></td>
+                        <td title={issue.diagnosis} style={{ fontSize: '11px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'default' }}>{issue.diagnosis}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* No IIS issues — show clean status */}
+      {iisDiag && !iisDiag.has_issues && iisDiag.summary && (
+        <div className="card" style={{ textAlign: 'center', padding: '20px' }}>
+          <span style={{ fontSize: '20px', color: 'var(--color-status-ok)' }}>&#10003;</span>
+          <div style={{ fontWeight: 500, fontSize: '14px', marginTop: '4px' }}>IIS Health: No Issues Detected</div>
+          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+            {iisDiag.summary.checks_24h} checks in 24h | {iisDiag.summary.failure_rate}% failure rate | Avg {iisDiag.summary.avg_response_ms}ms
+          </div>
         </div>
       )}
 

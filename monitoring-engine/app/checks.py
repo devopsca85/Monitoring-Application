@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 
 from app.config import settings
 from app.perf import collect_performance_metrics, format_perf_summary
+from app.iis_diagnostics import analyze_iis_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,12 @@ async def run_uptime_check(site: dict) -> dict:
             # Collect performance metrics
             perf = await collect_performance_metrics(page)
             perf_summary = format_perf_summary(perf, settings.MONITOR_REGION)
+
+            # IIS diagnostics for uptime checks
+            iis_result = await analyze_iis_diagnostics(page, elapsed, perf_summary)
+            if iis_result["has_issues"]:
+                perf_summary["iis_diagnostics"] = iis_result["issues"]
+                perf_summary["iis_analysis"] = iis_result["iis_analysis"]
 
             await browser.close()
 
@@ -641,6 +648,13 @@ async def run_login_check(
                     login_perf_summary["bottleneck_detail"] = (
                         f"Frontend took {total_load - ttfb}ms after response — rendering bottleneck"
                     )
+
+            # === IIS / App Pool Diagnostics ===
+            iis_result = await analyze_iis_diagnostics(bpage, actual_response_ms, login_perf_summary)
+            if iis_result["has_issues"]:
+                login_perf_summary["iis_diagnostics"] = iis_result["issues"]
+                login_perf_summary["iis_analysis"] = iis_result["iis_analysis"]
+                logger.info(f"IIS diagnostics for {site['url']}: {iis_result['iis_analysis']}")
 
             # === STEP 3: Validate subpages ===
             overall_status = "ok"
