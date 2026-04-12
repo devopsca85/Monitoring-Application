@@ -54,7 +54,7 @@ function App() {
             <Route path="/sites/new" element={<SiteForm />} />
             <Route path="/sites/:id/edit" element={<SiteForm />} />
             <Route path="/sites/:id" element={<SiteDetail />} />
-            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/alerts" element={<Alerts isAdmin={user.is_admin} />} />
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/false-positives" element={<FalsePositives />} />
             <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />

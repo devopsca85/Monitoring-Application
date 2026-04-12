@@ -15,7 +15,7 @@ function formatDuration(startStr, endStr) {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-export default function Alerts() {
+export default function Alerts({ isAdmin = false }) {
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [history, setHistory] = useState([]);
   const [sites, setSites] = useState([]);
@@ -150,7 +150,7 @@ export default function Alerts() {
                         <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical" style={{ animation: 'pulse 2s infinite' }}>Active</span>}</td>
                         <td style={{ display: 'flex', gap: '4px' }}>
                           {!a.resolved && <button onClick={() => handleResolve(a.id)} className="btn btn-primary" style={{ padding: '3px 8px', fontSize: '10px' }}>Resolve</button>}
-                          <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '10px' }}>False +</button>
+                          {isAdmin && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '10px' }}>False +</button>}
                         </td>
                       </tr>
                     ))}
@@ -184,7 +184,7 @@ export default function Alerts() {
                     <td style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-status-critical)' }}>{formatDuration(a.created_at, null)}</td>
                     <td style={{ display: 'flex', gap: '6px' }}>
                       <button onClick={() => handleResolve(a.id)} className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '11px' }}>Resolve</button>
-                      {!a.false_positive && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '11px' }}>False +</button>}
+                      {isAdmin && !a.false_positive && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '11px' }}>False +</button>}
                     </td>
                   </tr>
                 ))}
@@ -216,7 +216,7 @@ export default function Alerts() {
                     <td style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>{a.resolved ? formatCST(a.resolved_at) : <span style={{ color: 'var(--color-status-critical)', fontWeight: 600 }}>ONGOING</span>}</td>
                     <td style={{ fontSize: '12px' }}>{formatDuration(a.created_at, a.resolved_at)}</td>
                     <td>{a.resolved ? <span className="badge badge-ok">Resolved</span> : <span className="badge badge-critical">Active</span>}</td>
-                    <td>{!a.false_positive && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '10px' }}>False +</button>}</td>
+                    <td>{isAdmin && !a.false_positive && <button onClick={() => handleFalsePositive(a.id)} className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '10px' }}>False +</button>}</td>
                   </tr>
                 ))}
                 {history.length === 0 && (

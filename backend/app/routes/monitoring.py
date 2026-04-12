@@ -317,7 +317,9 @@ def mark_false_positive(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Mark an alert as false positive + create suppression rule for this pattern."""
+    """Mark an alert as false positive + create suppression rule. Admin only."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can mark alerts as false positive")
     from datetime import datetime, timezone
 
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
@@ -366,6 +368,8 @@ def restore_false_positive(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     """Restore a false positive alert and remove its suppression rule."""
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
@@ -459,7 +463,9 @@ def delete_fp_rule(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Delete a false positive suppression rule."""
+    """Delete a false positive suppression rule. Admin only."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     rule = db.query(FalsePositiveRule).filter(FalsePositiveRule.id == rule_id).first()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
