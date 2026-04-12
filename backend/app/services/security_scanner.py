@@ -289,15 +289,28 @@ async def scan_site_security(url: str) -> dict:
         except Exception as e:
             ssl_data["error"] = str(e)[:200]
 
-    # Calculate score
-    severity_weights = {"critical": 20, "high": 10, "medium": 5, "low": 2, "info": 0}
-    deductions = sum(severity_weights.get(f["severity"], 0) for f in findings)
+    # Calculate score — weighted by severity with diminishing impact for low findings
+    # Each severity has a per-finding deduction AND a cap (so many low findings don't tank the score)
+    severity_config = {
+        "critical": {"per": 25, "cap": 50},   # Max 50 pts lost from critical
+        "high":     {"per": 15, "cap": 30},   # Max 30 pts lost from high
+        "medium":   {"per": 5,  "cap": 20},   # Max 20 pts lost from medium
+        "low":      {"per": 1,  "cap": 5},    # Max 5 pts lost from low
+        "info":     {"per": 0,  "cap": 0},
+    }
+    deductions = 0
+    for sev, config in severity_config.items():
+        count = sum(1 for f in findings if f["severity"] == sev)
+        deductions += min(count * config["per"], config["cap"])
+
     score = max(0, 100 - deductions)
 
-    if score >= 90: grade = "A"
-    elif score >= 80: grade = "B"
-    elif score >= 70: grade = "C"
-    elif score >= 50: grade = "D"
+    # Grade thresholds (aligned with industry: A = excellent, F = serious issues)
+    if score >= 90: grade = "A+"
+    elif score >= 80: grade = "A"
+    elif score >= 70: grade = "B"
+    elif score >= 60: grade = "C"
+    elif score >= 40: grade = "D"
     else: grade = "F"
 
     return {
