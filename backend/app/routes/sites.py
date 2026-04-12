@@ -10,26 +10,58 @@ from app.routes.auth import get_current_user
 router = APIRouter(prefix="/sites", tags=["sites"])
 
 
-@router.get("/", response_model=list[SiteResponse])
+def _safe_enum(val, default=""):
+    if val is None:
+        return default
+    return val.value if hasattr(val, 'value') else str(val)
+
+
+def _serialize_site(s):
+    """Safely serialize a Site ORM object to a dict — no Pydantic Enum issues."""
+    return {
+        "id": s.id,
+        "name": s.name,
+        "url": s.url,
+        "check_type": _safe_enum(s.check_type, "uptime"),
+        "tech_stack": _safe_enum(s.tech_stack, "other"),
+        "check_interval_minutes": s.check_interval_minutes or 5,
+        "slow_threshold_ms": s.slow_threshold_ms or 10000,
+        "is_active": bool(s.is_active) if s.is_active is not None else True,
+        "notification_channel": _safe_enum(s.notification_channel, "email"),
+        "notification_emails": s.notification_emails or "",
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "pages": [
+            {
+                "id": p.id, "page_url": p.page_url, "page_name": p.page_name,
+                "expected_element": p.expected_element, "expected_text": p.expected_text,
+                "sort_order": p.sort_order or 0,
+            }
+            for p in (s.pages or [])
+        ],
+    }
+
+
+@router.get("/")
 def list_sites(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    return db.query(Site).all()
+    sites = db.query(Site).all()
+    return [_serialize_site(s) for s in sites]
 
 
-@router.get("/{site_id}", response_model=SiteResponse)
+@router.get("/{site_id}")
 def get_site(
     site_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    site = db.query(Site).filter(Site.id == site_id).first()
-    if not site:
+    s = db.query(Site).filter(Site.id == site_id).first()
+    if not s:
         raise HTTPException(status_code=404, detail="Site not found")
-    return site
+    return _serialize_site(s)
 
 
-@router.post("/", response_model=SiteResponse, status_code=201)
+@router.post("/", status_code=201)
 async def create_site(
     site_in: SiteCreate,
     db: Session = Depends(get_db),
@@ -89,7 +121,7 @@ async def create_site(
         ),
     )
 
-    return site
+    return _serialize_site(site)
 
 
 @router.get("/{site_id}/credentials", response_model=SiteCredentialResponse | None)
@@ -102,7 +134,7 @@ def get_site_credentials(
     return cred
 
 
-@router.put("/{site_id}", response_model=SiteResponse)
+@router.put("/{site_id}", )
 def update_site(
     site_id: int,
     site_in: SiteUpdate,
@@ -162,7 +194,7 @@ def update_site(
 
     db.commit()
     db.refresh(site)
-    return site
+    return _serialize_site(site)
 
 
 @router.delete("/{site_id}", status_code=204)

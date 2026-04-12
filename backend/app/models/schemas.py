@@ -104,14 +104,14 @@ class SiteResponse(BaseModel):
     id: int
     name: str
     url: str
-    check_type: CheckType
+    check_type: str | None = "uptime"
     tech_stack: str | None = "other"
-    check_interval_minutes: int
-    slow_threshold_ms: int
-    is_active: bool
-    notification_channel: NotificationChannel
-    notification_emails: str | None
-    created_at: datetime | None
+    check_interval_minutes: int = 5
+    slow_threshold_ms: int = 10000
+    is_active: bool = True
+    notification_channel: str | None = "email"
+    notification_emails: str | None = None
+    created_at: datetime | None = None
     pages: list[SitePageResponse] = []
     model_config = {"from_attributes": True}
 
