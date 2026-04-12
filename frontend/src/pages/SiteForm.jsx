@@ -34,19 +34,20 @@ export default function SiteForm() {
   const [error, setError] = useState('');
   const [useGroupCreds, setUseGroupCreds] = useState(false);
 
-  // Load groups on mount
+  // Load groups on mount — fully safe, never crashes
   useEffect(() => {
-    getGroups().then(r => setGroups(r.data || [])).catch(() => {});
+    try {
+      getGroups().then(r => setGroups(r.data || [])).catch(() => setGroups([]));
+    } catch { setGroups([]); }
   }, []);
 
   // When group changes, load group credentials
-  const handleGroupChange = async (groupId) => {
+  const handleGroupChange = (groupId) => {
     setForm(f => ({ ...f, group_id: groupId }));
     if (groupId && form.check_type !== 'uptime') {
-      try {
-        const res = await getGroupCredentials(groupId);
+      getGroupCredentials(groupId).then(res => {
         const gc = res.data;
-        if (gc.has_credentials) {
+        if (gc && gc.has_credentials) {
           setCredentials(prev => ({
             ...prev,
             login_url: gc.login_url || prev.login_url,
@@ -60,7 +61,7 @@ export default function SiteForm() {
           }));
           setUseGroupCreds(true);
         }
-      } catch {}
+      }).catch(() => {});
     } else {
       setUseGroupCreds(false);
     }
