@@ -52,6 +52,8 @@ def _serialize_site(s):
         "notification_channel": _safe_enum(s.notification_channel, "email"),
         "notification_emails": s.notification_emails or "",
         "created_at": s.created_at.isoformat() if s.created_at else None,
+        "group_id": getattr(s, 'group_id', None),
+        "group_name": s.group.name if getattr(s, 'group', None) else None,
         "pages": pages,
     }
 
@@ -113,6 +115,7 @@ async def create_site(
     site = Site(
         name=site_in.name,
         url=site_in.url,
+        group_id=site_in.group_id,
         check_type=site_in.check_type,
         tech_stack=site_in.tech_stack or "other",
         check_interval_minutes=site_in.check_interval_minutes,

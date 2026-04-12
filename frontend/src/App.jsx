@@ -13,6 +13,7 @@ import Profile from './pages/Profile';
 import Metrics from './pages/Metrics';
 import FalsePositives from './pages/FalsePositives';
 import K8sClusters from './pages/K8sClusters';
+import SiteGroupsPage from './pages/SiteGroups';
 import AlertMonitor from './components/AlertMonitor';
 
 function App() {
@@ -64,7 +65,8 @@ function App() {
             <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
             {user.is_admin && (
               <>
-                <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/groups" element={<SiteGroupsPage />} />
+              <Route path="/admin/users" element={<AdminUsers />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
               </>
             )}
@@ -223,6 +225,10 @@ function Sidebar({ user }) {
         {user.is_admin && (
           <>
             <div style={{ padding: '12px 24px 6px', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', letterSpacing: '1px' }}>Admin</div>
+            <Link to="/admin/groups" className={isActive('/admin/groups')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Site Groups
+            </Link>
             <Link to="/admin/users" className={isActive('/admin/users')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               Users

@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { createSite, getSite, getSiteCredentials, updateSite } from '../services/api';
+import { createSite, getSite, getSiteCredentials, updateSite, getGroups, getGroupCredentials } from '../services/api';
 
 export default function SiteForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(isEdit);
+  const [groups, setGroups] = useState([]);
   const [form, setForm] = useState({
     name: '',
     url: '',
+    group_id: '',
     check_type: 'uptime',
     tech_stack: 'other',
     check_interval_minutes: 5,
@@ -30,6 +32,39 @@ export default function SiteForm() {
   });
   const [pages, setPages] = useState([]);
   const [error, setError] = useState('');
+  const [useGroupCreds, setUseGroupCreds] = useState(false);
+
+  // Load groups on mount
+  useEffect(() => {
+    getGroups().then(r => setGroups(r.data || [])).catch(() => {});
+  }, []);
+
+  // When group changes, load group credentials
+  const handleGroupChange = async (groupId) => {
+    setForm(f => ({ ...f, group_id: groupId }));
+    if (groupId && form.check_type !== 'uptime') {
+      try {
+        const res = await getGroupCredentials(groupId);
+        const gc = res.data;
+        if (gc.has_credentials) {
+          setCredentials(prev => ({
+            ...prev,
+            login_url: gc.login_url || prev.login_url,
+            username_selector: gc.username_selector || prev.username_selector,
+            password_selector: gc.password_selector || prev.password_selector,
+            submit_selector: gc.submit_selector || prev.submit_selector,
+            success_indicator: gc.success_indicator || prev.success_indicator,
+            expected_page: gc.expected_page || prev.expected_page,
+            username: '',
+            password: '',
+          }));
+          setUseGroupCreds(true);
+        }
+      } catch {}
+    } else {
+      setUseGroupCreds(false);
+    }
+  };
 
   useEffect(() => {
     if (!isEdit) return;
@@ -40,6 +75,7 @@ export default function SiteForm() {
         setForm({
           name: site.name,
           url: site.url,
+          group_id: site.group_id || '',
           check_type: site.check_type,
           tech_stack: site.tech_stack || 'other',
           check_interval_minutes: site.check_interval_minutes,
@@ -138,6 +174,16 @@ export default function SiteForm() {
             </div>
           </div>
           <div className="form-row">
+            <div className="form-group">
+              <label>Site Group <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontWeight: 'normal' }}>— optional, inherits login credentials</span></label>
+              <select value={form.group_id || ''} onChange={(e) => handleGroupChange(e.target.value ? parseInt(e.target.value) : '')}>
+                <option value="">No Group</option>
+                {groups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}{g.environment ? ` (${g.environment})` : ''}{g.has_credentials ? ' — has credentials' : ''}</option>
+                ))}
+              </select>
+              {useGroupCreds && <span style={{ fontSize: '11px', color: 'var(--color-status-ok)', marginTop: '4px', display: 'block' }}>Login credentials will be inherited from this group. Leave username/password blank below.</span>}
+            </div>
             <div className="form-group">
               <label>Check Type</label>
               <select value={form.check_type} onChange={(e) => setForm({ ...form, check_type: e.target.value })}>

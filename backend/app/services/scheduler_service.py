@@ -6,7 +6,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.security import decrypt_credential
-from app.models.models import Site, SiteCredential, SitePage
+from app.models.models import Site, SiteCredential, SiteGroup, SitePage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -35,9 +35,10 @@ def _build_job(site_id: int, db) -> dict | None:
     }
 
     if site.check_type.value in ("login", "multi_page"):
-        # FIX #6: Explicit query — no lazy loading / DetachedInstanceError
         cred = db.query(SiteCredential).filter(SiteCredential.site_id == site.id).first()
+
         if cred:
+            # Site has its own credentials
             try:
                 job["credentials"] = {
                     "login_url": cred.login_url,
@@ -50,8 +51,28 @@ def _build_job(site_id: int, db) -> dict | None:
                     "password": decrypt_credential(cred.encrypted_password),
                 }
             except Exception as e:
-                logger.error(f"Failed to decrypt credentials for site {site.name}: {e}")
+                logger.error(f"Failed to decrypt site credentials for {site.name}: {e}")
                 return None
+
+        elif getattr(site, 'group_id', None):
+            # Inherit credentials from group
+            group = db.query(SiteGroup).filter(SiteGroup.id == site.group_id).first()
+            if group and group.encrypted_username and group.encrypted_password:
+                try:
+                    job["credentials"] = {
+                        "login_url": group.login_url or site.url,
+                        "username_selector": group.username_selector or "#username",
+                        "password_selector": group.password_selector or "#password",
+                        "submit_selector": group.submit_selector or "input[type='submit']",
+                        "success_indicator": group.success_indicator or "",
+                        "expected_page": group.expected_page or "mainpage.aspx",
+                        "username": decrypt_credential(group.encrypted_username),
+                        "password": decrypt_credential(group.encrypted_password),
+                    }
+                    logger.info(f"Using group '{group.name}' credentials for site {site.name}")
+                except Exception as e:
+                    logger.error(f"Failed to decrypt group credentials for {site.name}: {e}")
+                    return None
 
         pages = (
             db.query(SitePage)

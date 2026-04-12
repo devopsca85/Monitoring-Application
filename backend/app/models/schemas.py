@@ -55,6 +55,7 @@ class SitePageCreate(BaseModel):
 class SiteCreate(BaseModel):
     name: str
     url: str
+    group_id: int | None = None
     check_type: CheckType = CheckType.UPTIME
     tech_stack: str = "other"
     check_interval_minutes: int = 5
@@ -79,6 +80,7 @@ class SiteCredentialResponse(BaseModel):
 class SiteUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
+    group_id: int | None = None
     check_type: CheckType | None = None
     tech_stack: str | None = None
     check_interval_minutes: int | None = None

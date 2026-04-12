@@ -65,12 +65,35 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class SiteGroup(Base):
+    """Groups sites together (e.g., Production, SSO, QA) with shared credentials."""
+    __tablename__ = "site_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, unique=True)
+    description = Column(Text)
+    environment = Column(String(50))  # production, staging, qa, development
+    # Shared login credentials for all sites in this group
+    login_url = Column(String(500))
+    username_selector = Column(String(255), default="#username")
+    password_selector = Column(String(255), default="#password")
+    submit_selector = Column(String(255), default="input[type='submit']")
+    success_indicator = Column(String(255))
+    expected_page = Column(String(255), default="mainpage.aspx")
+    encrypted_username = Column(Text)
+    encrypted_password = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+    sites = relationship("Site", back_populates="group")
+
+
 class Site(Base):
     __tablename__ = "sites"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)
     url = Column(String(500), nullable=False)
+    group_id = Column(Integer, ForeignKey("site_groups.id", ondelete="SET NULL"), nullable=True)
     check_type = Column(Enum(CheckType), default=CheckType.UPTIME)
     tech_stack = Column(String(50), default="other")
     check_interval_minutes = Column(Integer, default=5)
@@ -83,6 +106,7 @@ class Site(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    group = relationship("SiteGroup", back_populates="sites")
     credentials = relationship("SiteCredential", back_populates="site", uselist=False)
     pages = relationship("SitePage", back_populates="site")
     results = relationship("MonitoringResult", back_populates="site")
