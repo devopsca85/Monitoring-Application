@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import encrypt_credential
 from app.models.models import Site, SiteCredential, SitePage, User
-from app.models.schemas import SiteCreate, SiteCredentialResponse, SiteResponse, SiteUpdate
+from app.models.schemas import SiteCreate, SiteCredentialResponse, SiteUpdate
 from app.routes.auth import get_current_user
 
 router = APIRouter(prefix="/sites", tags=["sites"])
@@ -56,12 +56,40 @@ def _serialize_site(s):
     }
 
 
+@router.get("/debug")
+def debug_sites(db: Session = Depends(get_db)):
+    """Debug: raw site data without auth or serialization."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        sites = db.query(Site).all()
+        logger.info(f"DEBUG: found {len(sites)} sites")
+        return [{"id": s.id, "name": s.name, "url": s.url} for s in sites]
+    except Exception as e:
+        logger.error(f"DEBUG sites failed: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
 @router.get("/")
 def list_sites(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    sites = db.query(Site).all()
-    return [_serialize_site(s) for s in sites]
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        sites = db.query(Site).all()
+        logger.info(f"list_sites: found {len(sites)} sites")
+        result = []
+        for s in sites:
+            try:
+                result.append(_serialize_site(s))
+            except Exception as e:
+                logger.error(f"Failed to serialize site {s.id} ({s.name}): {e}", exc_info=True)
+                result.append({"id": s.id, "name": s.name, "url": s.url, "error": str(e)})
+        return result
+    except Exception as e:
+        logger.error(f"list_sites failed: {e}", exc_info=True)
+        return []
 
 
 @router.get("/{site_id}")
@@ -86,7 +114,7 @@ async def create_site(
         name=site_in.name,
         url=site_in.url,
         check_type=site_in.check_type,
-        tech_stack=site_in.tech_stack,
+        tech_stack=site_in.tech_stack or "other",
         check_interval_minutes=site_in.check_interval_minutes,
         slow_threshold_ms=site_in.slow_threshold_ms,
         notification_channel=site_in.notification_channel,

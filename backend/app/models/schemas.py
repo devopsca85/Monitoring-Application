@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
-from app.models.models import CheckType, AlertStatus, NotificationChannel, TechStack
+from app.models.models import CheckType, AlertStatus, NotificationChannel
 
 
 # --- Auth ---
@@ -56,7 +56,7 @@ class SiteCreate(BaseModel):
     name: str
     url: str
     check_type: CheckType = CheckType.UPTIME
-    tech_stack: TechStack = TechStack.OTHER
+    tech_stack: str = "other"
     check_interval_minutes: int = 5
     slow_threshold_ms: int = 10000
     notification_channel: NotificationChannel = NotificationChannel.EMAIL
@@ -80,7 +80,7 @@ class SiteUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
     check_type: CheckType | None = None
-    tech_stack: TechStack | None = None
+    tech_stack: str | None = None
     check_interval_minutes: int | None = None
     slow_threshold_ms: int | None = None
     is_active: bool | None = None
