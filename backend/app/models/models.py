@@ -72,7 +72,7 @@ class Site(Base):
     name = Column(String(255), nullable=False)
     url = Column(String(500), nullable=False)
     check_type = Column(Enum(CheckType), default=CheckType.UPTIME)
-    tech_stack = Column(Enum(TechStack), default=TechStack.OTHER)
+    tech_stack = Column(String(50), default="other")
     check_interval_minutes = Column(Integer, default=5)
     slow_threshold_ms = Column(Integer, default=10000)
     is_active = Column(Boolean, default=True)
