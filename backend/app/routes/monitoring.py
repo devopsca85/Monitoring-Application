@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.utils import enum_val as _ev
 from app.models.models import Alert, AlertStatus, FalsePositiveRule, MonitoringResult, Site, User
 from app.models.schemas import (
     AlertDetailResponse,
@@ -501,7 +502,7 @@ async def acknowledge_alerts(
             continue
         s = sites_map.get(a.site_id)
         name = s.name if s else f"Site #{a.site_id}"
-        is_critical = (a.alert_type == AlertStatus.CRITICAL or a.alert_type is None
+        is_critical = (_ev(a.alert_type) == "critical" or a.alert_type is None
                        or (hasattr(a.alert_type, 'value') and a.alert_type.value == 'critical'))
 
         if is_critical and a.site_id not in seen_critical:
@@ -629,7 +630,7 @@ def iis_diagnostics(
 
     threshold = site.slow_threshold_ms or 10000
     total_checks = len(results_24h)
-    failures = [r for r in results_24h if r.status != AlertStatus.OK]
+    failures = [r for r in results_24h if _ev(r.status) != "ok"]
     slow_checks = [r for r in results_24h if (r.response_time_ms or 0) > threshold]
     response_times = [r.response_time_ms or 0 for r in results_24h if r.response_time_ms]
 
@@ -655,7 +656,7 @@ def iis_diagnostics(
         err = (r.error_message or "").lower()
 
         # Classify failure type
-        if r.status != AlertStatus.OK:
+        if _ev(r.status) != "ok":
             entry = {
                 "time": _to_iso_utc(r.checked_at),
                 "response_ms": int(rt),
@@ -695,7 +696,7 @@ def iis_diagnostics(
                 })
                 if issue.get("category") == "cold_start":
                     cold_start_count += 1
-                if r.status != AlertStatus.OK:
+                if _ev(r.status) != "ok":
                     failure_types["iis_issue"].append({
                         "time": _to_iso_utc(r.checked_at),
                         "response_ms": int(rt),
@@ -785,7 +786,7 @@ def iis_diagnostics(
     for r in results_7d:
         if r.checked_at:
             day = r.checked_at.strftime("%Y-%m-%d")
-            if r.status != AlertStatus.OK:
+            if _ev(r.status) != "ok":
                 daily_failures[day] = daily_failures.get(day, 0) + 1
             if (r.response_time_ms or 0) > threshold:
                 daily_slow[day] = daily_slow.get(day, 0) + 1
@@ -1024,9 +1025,9 @@ def dashboard_stats(
         .all()
     )
 
-    up = sum(1 for r in latest_results if r.status == AlertStatus.OK)
-    down = sum(1 for r in latest_results if r.status == AlertStatus.CRITICAL)
-    warning = sum(1 for r in latest_results if r.status == AlertStatus.WARNING)
+    up = sum(1 for r in latest_results if _ev(r.status) == "ok")
+    down = sum(1 for r in latest_results if _ev(r.status) == "critical")
+    warning = sum(1 for r in latest_results if _ev(r.status) == "warning")
 
     avg_rt = (
         sum(r.response_time_ms or 0 for r in latest_results) / len(latest_results)

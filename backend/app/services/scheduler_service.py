@@ -128,6 +128,7 @@ async def trigger_check_for_site(site_id: int) -> dict:
 async def _run_daily_report_scheduler():
     """Runs the daily report at 9:00 AM CST every day."""
     from app.services.daily_report import send_daily_report
+    from app.services.security_report import send_security_report_email
     from datetime import datetime, timedelta, timezone
 
     CST_OFFSET = timedelta(hours=-6)
@@ -140,12 +141,16 @@ async def _run_daily_report_scheduler():
             today = cst_now.date()
 
             if cst_now.hour == 9 and cst_now.minute < 2 and last_report_date != today:
-                logger.info("Daily report: triggering 9 AM CST report")
+                logger.info("Daily report: triggering 9 AM CST reports")
                 last_report_date = today
                 try:
                     await send_daily_report()
                 except Exception as e:
-                    logger.error(f"Daily report send failed: {e}", exc_info=True)
+                    logger.error(f"Daily performance report failed: {e}", exc_info=True)
+                try:
+                    await send_security_report_email()
+                except Exception as e:
+                    logger.error(f"Daily security report failed: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Daily report scheduler error: {e}")
 

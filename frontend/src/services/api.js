@@ -94,6 +94,8 @@ export const getComplianceFrameworks = () => api.get('/security/compliance/frame
 export const getFrameworkControls = (id) => api.get(`/security/compliance/frameworks/${id}`);
 export const updateComplianceControl = (id, data) => api.put(`/security/compliance/controls/${id}`, data);
 export const seedFrameworks = () => api.post('/security/compliance/seed');
+export const downloadSecurityReport = () => api.get('/security/report/download', { responseType: 'blob' });
+export const sendSecurityReport = () => api.post('/security/report/send');
 
 // Site Groups
 export const getGroups = () => api.get('/groups/');

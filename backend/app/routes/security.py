@@ -341,3 +341,35 @@ def seed_frameworks(
 
     db.commit()
     return {"status": "Frameworks seeded", "frameworks": ["SOC 2 Type II", "GDPR"]}
+
+
+# --- PDF Reports ---
+
+@router.get("/report/download")
+def download_security_report(
+    user: User = Depends(get_current_user),
+):
+    """Download security scan report as PDF."""
+    from fastapi.responses import Response
+    from app.services.security_report import generate_security_pdf
+
+    pdf_bytes = generate_security_pdf()
+    filename = f"security-report-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/report/send")
+async def send_security_report(
+    user: User = Depends(get_current_user),
+):
+    """Manually send security report email to all admins."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.services.security_report import send_security_report_email
+    await send_security_report_email()
+    return {"status": "Security report sent"}

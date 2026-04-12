@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.utils import enum_val as _ev
+
 from app.core.database import SessionLocal
 from app.models.models import Alert, AlertStatus, MonitoringResult, Site
 from app.services.notification_service import send_email_alert, send_teams_alert
@@ -116,8 +118,8 @@ def generate_daily_report(db: Session) -> dict:
 
         threshold = site.slow_threshold_ms or 10000
         checks = len(results)
-        ok = sum(1 for r in results if r.status == AlertStatus.OK)
-        failures = sum(1 for r in results if r.status != AlertStatus.OK)
+        ok = sum(1 for r in results if _ev(r.status) == "ok")
+        failures = sum(1 for r in results if _ev(r.status) != "ok")
         slow = sum(1 for r in results if (r.response_time_ms or 0) > threshold)
         response_times = [r.response_time_ms or 0 for r in results if r.response_time_ms]
         avg_rt = round(sum(response_times) / len(response_times)) if response_times else 0
@@ -128,7 +130,7 @@ def generate_daily_report(db: Session) -> dict:
         # Collect error messages
         errors = []
         for r in results:
-            if r.status != AlertStatus.OK and r.error_message:
+            if _ev(r.status) != "ok" and r.error_message:
                 errors.append({
                     "time": r.checked_at.strftime("%I:%M %p") if r.checked_at else "",
                     "message": (r.error_message or "")[:150],
@@ -170,8 +172,8 @@ def generate_daily_report(db: Session) -> dict:
 
     alert_summary = {
         "total": len(alerts),
-        "critical": sum(1 for a in alerts if a.alert_type == AlertStatus.CRITICAL),
-        "warning": sum(1 for a in alerts if a.alert_type == AlertStatus.WARNING),
+        "critical": sum(1 for a in alerts if _ev(a.alert_type) == "critical"),
+        "warning": sum(1 for a in alerts if _ev(a.alert_type) == "warning"),
         "resolved": sum(1 for a in alerts if a.resolved),
         "unresolved": sum(1 for a in alerts if not a.resolved),
     }

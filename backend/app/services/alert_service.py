@@ -44,7 +44,7 @@ def _slow_alert_on_cooldown(db: Session, site_id: int) -> bool:
         db.query(Alert)
         .filter(
             Alert.site_id == site_id,
-            Alert.alert_type == AlertStatus.WARNING,
+            Alert.alert_type.in_([AlertStatus.WARNING, "warning"]),
             Alert.created_at >= cutoff,
         )
         .first()
@@ -147,7 +147,7 @@ async def _handle_slow_sites(db: Session) -> None:
             .order_by(MonitoringResult.checked_at.desc())
             .first()
         )
-        if not latest or latest.status != AlertStatus.OK:
+        if not latest or enum_val(latest.status, "") != "ok":
             continue
 
         response_time = latest.response_time_ms or 0
@@ -186,11 +186,11 @@ async def _handle_slow_sites(db: Session) -> None:
         if existing:
             # Update existing alert message with latest data
             existing.message = msg
-            existing.alert_type = AlertStatus.WARNING
+            existing.alert_type = "warning"
         else:
             alert = Alert(
                 site_id=site.id,
-                alert_type=AlertStatus.WARNING,
+                alert_type="warning",
                 message=msg,
                 notified=True,
                 notified_at=datetime.now(timezone.utc),
@@ -248,7 +248,9 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
             f"code={result.status_code}, response={result.response_time_ms}ms"
         )
 
-        if result.status == AlertStatus.OK:
+        result_status = enum_val(result.status, "critical")
+
+        if result_status == "ok":
             slow_threshold = site.slow_threshold_ms or 10000
             response_time = result.response_time_ms or 0
 
