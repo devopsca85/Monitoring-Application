@@ -5,7 +5,7 @@ import { getSites, deleteSite } from '../services/api';
 export default function Sites() {
   const [sites, setSites] = useState([]);
 
-  const load = () => getSites().then((r) => setSites(r.data)).catch(() => {});
+  const load = () => getSites().then((r) => setSites(r.data || [])).catch((e) => { console.error('Sites load failed:', e); setSites([]); });
 
   useEffect(() => { load(); }, []);
 

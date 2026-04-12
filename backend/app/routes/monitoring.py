@@ -577,7 +577,7 @@ def sites_status(
             "name": s.name,
             "url": s.url,
             "check_type": s.check_type.value if s.check_type and hasattr(s.check_type, 'value') else str(s.check_type or "uptime"),
-            "tech_stack": s.tech_stack.value if s.tech_stack and hasattr(s.tech_stack, 'value') else str(s.tech_stack or "other"),
+            "tech_stack": (s.tech_stack.value if hasattr(s.tech_stack, 'value') else str(s.tech_stack)) if s.tech_stack else "other",
             "check_interval_minutes": s.check_interval_minutes or 5,
             "slow_threshold_ms": s.slow_threshold_ms or 10000,
             "is_active": bool(s.is_active) if s.is_active is not None else True,

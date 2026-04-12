@@ -17,27 +17,42 @@ def _safe_enum(val, default=""):
 
 
 def _serialize_site(s):
-    """Safely serialize a Site ORM object to a dict — no Pydantic Enum issues."""
-    return {
-        "id": s.id,
-        "name": s.name,
-        "url": s.url,
-        "check_type": _safe_enum(s.check_type, "uptime"),
-        "tech_stack": _safe_enum(s.tech_stack, "other"),
-        "check_interval_minutes": s.check_interval_minutes or 5,
-        "slow_threshold_ms": s.slow_threshold_ms or 10000,
-        "is_active": bool(s.is_active) if s.is_active is not None else True,
-        "notification_channel": _safe_enum(s.notification_channel, "email"),
-        "notification_emails": s.notification_emails or "",
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "pages": [
+    """Safely serialize a Site ORM object to a dict — handles missing columns gracefully."""
+    try:
+        tech = _safe_enum(s.tech_stack, "other")
+    except Exception:
+        tech = "other"
+
+    try:
+        slow = s.slow_threshold_ms or 10000
+    except Exception:
+        slow = 10000
+
+    try:
+        pages = [
             {
                 "id": p.id, "page_url": p.page_url, "page_name": p.page_name,
                 "expected_element": p.expected_element, "expected_text": p.expected_text,
                 "sort_order": p.sort_order or 0,
             }
             for p in (s.pages or [])
-        ],
+        ]
+    except Exception:
+        pages = []
+
+    return {
+        "id": s.id,
+        "name": s.name,
+        "url": s.url,
+        "check_type": _safe_enum(s.check_type, "uptime"),
+        "tech_stack": tech,
+        "check_interval_minutes": s.check_interval_minutes or 5,
+        "slow_threshold_ms": slow,
+        "is_active": bool(s.is_active) if s.is_active is not None else True,
+        "notification_channel": _safe_enum(s.notification_channel, "email"),
+        "notification_emails": s.notification_emails or "",
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "pages": pages,
     }
 
 
