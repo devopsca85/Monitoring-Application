@@ -7,6 +7,7 @@ from playwright.async_api import async_playwright
 from app.config import settings
 from app.perf import collect_performance_metrics, format_perf_summary
 from app.iis_diagnostics import analyze_iis_diagnostics
+from app.stack_diagnostics import analyze_stack_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,18 @@ async def run_uptime_check(site: dict) -> dict:
             perf = await collect_performance_metrics(page)
             perf_summary = format_perf_summary(perf, settings.MONITOR_REGION)
 
-            # IIS diagnostics for uptime checks
-            iis_result = await analyze_iis_diagnostics(page, elapsed, perf_summary)
-            if iis_result["has_issues"]:
-                perf_summary["iis_diagnostics"] = iis_result["issues"]
-                perf_summary["iis_analysis"] = iis_result["iis_analysis"]
+            # Stack-aware diagnostics
+            tech_stack = site.get("tech_stack", "other")
+            if tech_stack in ("asp_net", "asp_net_core"):
+                iis_result = await analyze_iis_diagnostics(page, elapsed, perf_summary)
+                if iis_result["has_issues"]:
+                    perf_summary["iis_diagnostics"] = iis_result["issues"]
+                    perf_summary["iis_analysis"] = iis_result["iis_analysis"]
+
+            stack_result = await analyze_stack_diagnostics(page, tech_stack, elapsed)
+            if stack_result["has_issues"]:
+                perf_summary["stack_diagnostics"] = stack_result["issues"]
+            perf_summary["tech_stack"] = tech_stack
 
             await browser.close()
 
@@ -667,12 +675,21 @@ async def run_login_check(
                         f"Frontend took {total_load - ttfb}ms after response — rendering bottleneck"
                     )
 
-            # === IIS / App Pool Diagnostics ===
-            iis_result = await analyze_iis_diagnostics(bpage, actual_response_ms, login_perf_summary)
-            if iis_result["has_issues"]:
-                login_perf_summary["iis_diagnostics"] = iis_result["issues"]
-                login_perf_summary["iis_analysis"] = iis_result["iis_analysis"]
-                logger.info(f"IIS diagnostics for {site['url']}: {iis_result['iis_analysis']}")
+            # === Stack-aware Diagnostics ===
+            tech_stack = site.get("tech_stack", "other")
+            login_perf_summary["tech_stack"] = tech_stack
+
+            if tech_stack in ("asp_net", "asp_net_core"):
+                iis_result = await analyze_iis_diagnostics(bpage, actual_response_ms, login_perf_summary)
+                if iis_result["has_issues"]:
+                    login_perf_summary["iis_diagnostics"] = iis_result["issues"]
+                    login_perf_summary["iis_analysis"] = iis_result["iis_analysis"]
+                    logger.info(f"IIS diagnostics for {site['url']}: {iis_result['iis_analysis']}")
+
+            stack_result = await analyze_stack_diagnostics(bpage, tech_stack, actual_response_ms)
+            if stack_result["has_issues"]:
+                login_perf_summary["stack_diagnostics"] = stack_result["issues"]
+                logger.info(f"Stack diagnostics ({tech_stack}) for {site['url']}: {len(stack_result['issues'])} issue(s)")
 
             # === STEP 3: Validate subpages ===
             overall_status = "ok"

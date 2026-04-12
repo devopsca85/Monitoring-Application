@@ -29,6 +29,7 @@ def _build_job(site_id: int, db) -> dict | None:
         "site_url": site.url,
         "site_name": site.name,
         "check_type": site.check_type.value,
+        "tech_stack": site.tech_stack.value if site.tech_stack else "other",
         "credentials": None,
         "pages": [],
     }

@@ -36,6 +36,23 @@ class NotificationChannel(str, enum.Enum):
     BOTH = "both"
 
 
+class TechStack(str, enum.Enum):
+    ASP_NET = "asp_net"
+    ASP_NET_CORE = "asp_net_core"
+    PHP = "php"
+    NODEJS = "nodejs"
+    REACT = "react"
+    ANGULAR = "angular"
+    VUE = "vue"
+    PYTHON = "python"
+    JAVA = "java"
+    RUBY = "ruby"
+    WORDPRESS = "wordpress"
+    DRUPAL = "drupal"
+    STATIC = "static"
+    OTHER = "other"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -55,8 +72,9 @@ class Site(Base):
     name = Column(String(255), nullable=False)
     url = Column(String(500), nullable=False)
     check_type = Column(Enum(CheckType), default=CheckType.UPTIME)
+    tech_stack = Column(Enum(TechStack), default=TechStack.OTHER)
     check_interval_minutes = Column(Integer, default=5)
-    slow_threshold_ms = Column(Integer, default=10000)  # Alert if response > this (ms)
+    slow_threshold_ms = Column(Integer, default=10000)
     is_active = Column(Boolean, default=True)
     notification_channel = Column(
         Enum(NotificationChannel), default=NotificationChannel.EMAIL

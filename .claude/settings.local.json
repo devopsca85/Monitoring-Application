@@ -6,7 +6,12 @@
       "Bash(curl -sL https://www.fldata.com)",
       "WebFetch(domain:ehsqa4.fldata.com)",
       "Bash(curl -sL --max-time 15 \"https://ehsqa4.fldata.com\")",
-      "Bash(curl -sLk --max-time 15 \"https://ehsqa4.fldata.com\")"
+      "Bash(curl -sLk --max-time 15 \"https://ehsqa4.fldata.com\")",
+      "Bash(where node:*)",
+      "Bash(where npm:*)",
+      "Bash(cmd.exe /c \"where npm\")",
+      "Read(//c/Program Files/**)",
+      "Bash(cmd.exe /c \"npm --version\")"
     ]
   }
 }

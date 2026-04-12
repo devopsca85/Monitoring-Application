@@ -18,6 +18,7 @@ class MonitorJob(BaseModel):
     site_url: str
     site_name: str
     check_type: str  # uptime, login, multi_page
+    tech_stack: str = "other"  # asp_net, php, nodejs, react, etc.
     credentials: dict | None = None
     pages: list[dict] = []
 
@@ -27,7 +28,7 @@ async def run_check(job: MonitorJob):
     """Execute a monitoring check and report results back to the API."""
     logger.info(f"Running {job.check_type} check for {job.site_name} ({job.site_url})")
 
-    site = {"url": job.site_url, "name": job.site_name}
+    site = {"url": job.site_url, "name": job.site_name, "tech_stack": job.tech_stack}
 
     if job.check_type == "uptime":
         result = await run_uptime_check(site)

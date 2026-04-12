@@ -11,6 +11,7 @@ export default function SiteForm() {
     name: '',
     url: '',
     check_type: 'uptime',
+    tech_stack: 'other',
     check_interval_minutes: 5,
     slow_threshold_ms: 10000,
     notification_channel: 'email',
@@ -40,8 +41,9 @@ export default function SiteForm() {
           name: site.name,
           url: site.url,
           check_type: site.check_type,
+          tech_stack: site.tech_stack || 'other',
           check_interval_minutes: site.check_interval_minutes,
-          slow_threshold_ms: site.slow_threshold_ms || 5000,
+          slow_threshold_ms: site.slow_threshold_ms || 10000,
           notification_channel: site.notification_channel,
           notification_emails: site.notification_emails || '',
           is_active: site.is_active,
@@ -144,6 +146,40 @@ export default function SiteForm() {
                 <option value="multi_page">Multi-Page Validation</option>
               </select>
             </div>
+            <div className="form-group">
+              <label>Technology Stack</label>
+              <select value={form.tech_stack} onChange={(e) => setForm({ ...form, tech_stack: e.target.value })}>
+                <optgroup label="Microsoft">
+                  <option value="asp_net">ASP.NET (.aspx / WebForms / MVC)</option>
+                  <option value="asp_net_core">ASP.NET Core / Blazor</option>
+                </optgroup>
+                <optgroup label="JavaScript">
+                  <option value="react">React</option>
+                  <option value="angular">Angular</option>
+                  <option value="vue">Vue.js</option>
+                  <option value="nodejs">Node.js / Express</option>
+                </optgroup>
+                <optgroup label="Backend">
+                  <option value="php">PHP / Laravel</option>
+                  <option value="python">Python / Django / Flask</option>
+                  <option value="java">Java / Spring / Tomcat</option>
+                  <option value="ruby">Ruby on Rails</option>
+                </optgroup>
+                <optgroup label="CMS">
+                  <option value="wordpress">WordPress</option>
+                  <option value="drupal">Drupal</option>
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="static">Static Site (HTML/CSS/JS)</option>
+                  <option value="other">Other / Unknown</option>
+                </optgroup>
+              </select>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px', display: 'block' }}>
+                Enables stack-specific error detection and diagnostics.
+              </span>
+            </div>
+          </div>
+          <div className="form-row">
             <div className="form-group">
               <label>Check Interval</label>
               <select value={String(form.check_interval_minutes)} onChange={(e) => setForm({ ...form, check_interval_minutes: parseInt(e.target.value) })}>
