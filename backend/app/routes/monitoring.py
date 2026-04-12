@@ -33,7 +33,7 @@ async def submit_result(
     db.refresh(result)
 
     logger.info(
-        f"Result submitted: site_id={result.site_id}, status={result.status.value}, "
+        f"Result submitted: site_id={result.site_id}, status={result.status}, "
         f"code={result.status_code}, error={result.error_message or 'none'}"
     )
 

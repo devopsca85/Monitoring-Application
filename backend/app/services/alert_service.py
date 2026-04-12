@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.utils import enum_val
 from app.models.models import Alert, AlertStatus, FalsePositiveRule, MonitoringResult, Site
 from app.services.notification_service import send_alert
 
@@ -118,7 +119,7 @@ async def _create_and_send_alert(
 
         try:
             await send_alert(
-                channel=site.notification_channel.value,
+                channel=enum_val(site.notification_channel, "email"),
                 to_emails=to_emails,
                 site_name=site.name,
                 status=status_str,
@@ -225,7 +226,7 @@ async def _handle_slow_sites(db: Session) -> None:
 
     try:
         await send_alert(
-            channel=first_site.notification_channel.value,
+            channel=first_enum_val(site.notification_channel, "email"),
             to_emails=to_emails,
             site_name="Multiple Sites",
             status="warning",
@@ -243,7 +244,7 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
             return
 
         logger.info(
-            f"evaluate_and_alert: site={site.name}, status={result.status.value}, "
+            f"evaluate_and_alert: site={site.name}, status={enum_val(result.status, "critical")}, "
             f"code={result.status_code}, response={result.response_time_ms}ms"
         )
 
@@ -272,7 +273,7 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
             if open_alerts:
                 try:
                     await send_alert(
-                        channel=site.notification_channel.value,
+                        channel=enum_val(site.notification_channel, "email"),
                         to_emails=(site.notification_emails or "").split(","),
                         site_name=site.name,
                         status="ok",
@@ -287,9 +288,9 @@ async def evaluate_and_alert(db: Session, result: MonitoringResult) -> None:
         if _is_immediate_alert(result):
             error_msg = f"HTTP {result.status_code} error on {site.name} ({site.url}). {result.error_message or ''}".strip()
         else:
-            error_msg = result.error_message or f"Site {site.name} ({site.url}) is {result.status.value}."
+            error_msg = result.error_message or f"Site {site.name} ({site.url}) is {enum_val(result.status, "critical")}."
 
-        logger.warning(f"Alert: {site.name} — {result.status.value} — {error_msg[:100]}")
+        logger.warning(f"Alert: {site.name} — {enum_val(result.status, "critical")} — {error_msg[:100]}")
         await _create_and_send_alert(db, site, result, error_msg)
 
     except Exception as e:

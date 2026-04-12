@@ -162,7 +162,7 @@ async def create_site(
         message=(
             f"<strong>{site.name}</strong> ({site.url}) has been added "
             f"to monitoring by <strong>{user.email}</strong>.<br/>"
-            f"Check type: <strong>{site.check_type.value}</strong> | "
+            f"Check type: <strong>{site.check_type}</strong> | "
             f"Interval: <strong>{site.check_interval_minutes} min</strong>"
         ),
     )

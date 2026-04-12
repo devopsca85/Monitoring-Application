@@ -6,6 +6,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.security import decrypt_credential
+from app.core.utils import enum_val
 from app.models.models import Site, SiteCredential, SiteGroup, SitePage
 
 logger = logging.getLogger(__name__)
@@ -28,13 +29,13 @@ def _build_job(site_id: int, db) -> dict | None:
         "site_id": site.id,
         "site_url": site.url,
         "site_name": site.name,
-        "check_type": site.check_type.value,
-        "tech_stack": site.tech_stack.value if site.tech_stack else "other",
+        "check_type": enum_val(site.check_type, "uptime"),
+        "tech_stack": enum_val(site.tech_stack, "other"),
         "credentials": None,
         "pages": [],
     }
 
-    if site.check_type.value in ("login", "multi_page"):
+    if enum_val(site.check_type, "uptime") in ("login", "multi_page"):
         cred = db.query(SiteCredential).filter(SiteCredential.site_id == site.id).first()
 
         if cred:

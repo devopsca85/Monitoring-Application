@@ -132,7 +132,7 @@ def generate_daily_report(db: Session) -> dict:
                 errors.append({
                     "time": r.checked_at.strftime("%I:%M %p") if r.checked_at else "",
                     "message": (r.error_message or "")[:150],
-                    "status": r.status.value if r.status else "critical",
+                    "status": (r.status.value if hasattr(r.status, 'value') else str(r.status)) if r.status else "critical",
                 })
 
         all_checks += checks

@@ -126,10 +126,16 @@ export default function Dashboard() {
   const liveDown = stats?.sites_down || 0;
   const liveUp = stats ? Math.max(0, stats.sites_up - (liveWarnings - (stats.sites_warning || 0))) : 0;
 
-  const pieData = stats ? [
-    { name: 'Up', value: Math.max(0, (stats.total_sites || 0) - liveDown - liveWarnings), color: PIE_COLORS.up },
-    { name: 'Down', value: liveDown, color: PIE_COLORS.down },
-    { name: 'Warning/Slow', value: liveWarnings, color: PIE_COLORS.warning },
+  // Pie chart: only sites that have been checked (have a last_status)
+  const checkedSites = sitesStatus.filter((s) => s.last_status);
+  const pieUp = checkedSites.filter((s) => s.last_status === 'ok' && !s.is_slow).length;
+  const pieDown = checkedSites.filter((s) => s.last_status === 'critical').length;
+  const pieWarn = checkedSites.filter((s) => s.last_status === 'warning' || s.is_slow).length;
+
+  const pieData = checkedSites.length > 0 ? [
+    { name: 'Up', value: pieUp, color: PIE_COLORS.up },
+    { name: 'Down', value: pieDown, color: PIE_COLORS.down },
+    { name: 'Warning/Slow', value: pieWarn, color: PIE_COLORS.warning },
   ].filter((d) => d.value > 0) : [];
 
   return (
@@ -415,7 +421,7 @@ export default function Dashboard() {
                     {site.last_status ? (
                       <span className={`badge badge-${site.last_status}`} style={{ fontSize: '11px' }}>{site.last_status}</span>
                     ) : (
-                      <span style={{ color: 'var(--color-text-secondary)' }}>--</span>
+                      <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>Pending first check</span>
                     )}
                   </td>
                   <td style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
