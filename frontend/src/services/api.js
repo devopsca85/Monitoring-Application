@@ -85,6 +85,16 @@ export const uploadAlarmAudio = (file) => {
 export const deleteAlarmAudio = () => api.delete('/admin/alarm-audio');
 export const getAlarmAudioInfo = () => api.get('/admin/alarm-audio/info');
 
+// Kubernetes
+export const getK8sClusters = () => api.get('/k8s/clusters');
+export const getK8sCluster = (id) => api.get(`/k8s/clusters/${id}`);
+export const createK8sCluster = (data) => api.post('/k8s/clusters', data);
+export const updateK8sCluster = (id, data) => api.put(`/k8s/clusters/${id}`, data);
+export const deleteK8sCluster = (id) => api.delete(`/k8s/clusters/${id}`);
+export const getK8sAlerts = (id, resolved = false) => api.get(`/k8s/clusters/${id}/alerts?resolved=${resolved}`);
+export const resolveK8sAlert = (clusterId, alertId) => api.post(`/k8s/clusters/${clusterId}/alerts/${alertId}/resolve`);
+export const getK8sHistory = (id, hours = 24) => api.get(`/k8s/clusters/${id}/history?hours=${hours}`);
+
 // SSO (public)
 export const getSsoConfig = () => api.get('/sso/config');
 export const ssoCallback = (data) => api.post('/sso/callback', data);

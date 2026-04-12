@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import Base, engine
-from app.routes import admin, auth, monitoring, sites, sso
+from app.routes import admin, auth, k8s, monitoring, sites, sso
 
 settings = get_settings()
 
@@ -45,6 +45,7 @@ app.include_router(sites.router, prefix=settings.API_V1_PREFIX)
 app.include_router(monitoring.router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
 app.include_router(sso.router, prefix=settings.API_V1_PREFIX)
+app.include_router(k8s.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.on_event("startup")
@@ -69,6 +70,9 @@ async def startup():
 
     from app.services.scheduler_service import start_scheduler
     start_scheduler()
+
+    from app.services.k8s_scheduler import start_k8s_scheduler
+    start_k8s_scheduler()
 
     logger.info("Application started with background scheduler")
 
