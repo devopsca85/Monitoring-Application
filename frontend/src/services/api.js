@@ -85,6 +85,16 @@ export const uploadAlarmAudio = (file) => {
 export const deleteAlarmAudio = () => api.delete('/admin/alarm-audio');
 export const getAlarmAudioInfo = () => api.get('/admin/alarm-audio/info');
 
+// Security
+export const runSecurityScan = (siteId) => api.post(`/security/scan/${siteId}`);
+export const getSecurityScans = (siteId) => api.get(`/security/scans/${siteId}`);
+export const getLatestScan = (siteId) => api.get(`/security/scans/${siteId}/latest`);
+export const getSecurityDashboard = () => api.get('/security/dashboard');
+export const getComplianceFrameworks = () => api.get('/security/compliance/frameworks');
+export const getFrameworkControls = (id) => api.get(`/security/compliance/frameworks/${id}`);
+export const updateComplianceControl = (id, data) => api.put(`/security/compliance/controls/${id}`, data);
+export const seedFrameworks = () => api.post('/security/compliance/seed');
+
 // Site Groups
 export const getGroups = () => api.get('/groups/');
 export const getGroup = (id) => api.get(`/groups/${id}`);
