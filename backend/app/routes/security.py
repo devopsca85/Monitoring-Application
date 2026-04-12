@@ -53,6 +53,15 @@ async def run_security_scan(
     db.refresh(scan)
 
     logger.info(f"Security scan complete: {site.name} — Grade {result['grade']} ({result['score']}/100)")
+
+    # Auto-update compliance controls based on scan results
+    try:
+        from app.services.compliance_mapper import evaluate_compliance_from_scan
+        controls_updated = evaluate_compliance_from_scan(db, scan, site.name)
+        logger.info(f"Compliance auto-update: {controls_updated} controls updated")
+    except Exception as e:
+        logger.error(f"Compliance auto-update failed: {e}")
+
     return {
         "scan_id": scan.id,
         "score": result["score"],

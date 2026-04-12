@@ -98,7 +98,15 @@ export default function Compliance() {
                     <td>
                       <div style={{ fontWeight: 500, fontSize: '13px' }}>{c.title}</div>
                       {c.description && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{c.description}</div>}
-                      {c.evidence && <div style={{ fontSize: '11px', color: 'var(--color-status-ok)', marginTop: '2px' }}>Evidence: {c.evidence}</div>}
+                      {c.evidence && (
+                        <div style={{ fontSize: '11px', marginTop: '4px', padding: '6px 8px', borderRadius: '4px', background: c.evidence.includes('FAIL') ? '#fef2f220' : '#ecfdf520', border: `1px solid ${c.evidence.includes('FAIL') ? '#fecaca' : '#a7f3d0'}` }}>
+                          {c.evidence.split('\n').map((line, i) => (
+                            <div key={i} style={{ color: line.startsWith('PASS') ? 'var(--color-status-ok)' : line.startsWith('FAIL') ? 'var(--color-status-critical)' : 'var(--color-text-secondary)' }}>
+                              {line.startsWith('PASS') ? '\u2713 ' : line.startsWith('FAIL') ? '\u2717 ' : ''}{line}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td><span className={`badge ${c.check_type === 'automated' ? 'badge-ok' : ''}`} style={{ fontSize: '10px' }}>{c.check_type}</span></td>
                     <td>
