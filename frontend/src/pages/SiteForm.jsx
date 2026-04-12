@@ -116,6 +116,8 @@ export default function SiteForm() {
     setError('');
     try {
       const payload = { ...form };
+      // Clean up group_id — empty string to null
+      if (!payload.group_id) payload.group_id = null;
       if (form.check_type === 'login' || form.check_type === 'multi_page') {
         payload.credentials = credentials;
       }
